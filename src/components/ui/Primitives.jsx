@@ -1,0 +1,121 @@
+import React from "react";
+
+/* Small building blocks composed from the token classes in app.css. Kept
+   presentational - no data logic. */
+
+export function StatCard({ label, icon, value, valueClass = "", hint, wide, accent }) {
+  return (
+    <div
+      className={
+        "stat-card" +
+        (wide ? " stat-card--wide" : "") +
+        (accent ? " stat-card--accent" : "")
+      }
+    >
+      <span className="stat-card__label">
+        {icon}
+        {label}
+      </span>
+      <span className={"stat-card__value " + valueClass}>{value}</span>
+      {hint != null && <span className="stat-card__hint">{hint}</span>}
+    </div>
+  );
+}
+
+const BADGE_LABELS = {
+  unpaid: "Unpaid",
+  partial: "Partial",
+  paid: "Paid",
+  credit: "Credit",
+};
+
+export function StatusBadge({ status, label }) {
+  return (
+    <span className={`badge badge--${status}`}>{label || BADGE_LABELS[status]}</span>
+  );
+}
+
+export function EmptyState({ emoji = "🐾", title, children }) {
+  return (
+    <div className="empty-state">
+      <div className="empty-state__emoji">{emoji}</div>
+      {title && <p className="empty-state__title">{title}</p>}
+      {children && <p className="empty-state__body">{children}</p>}
+    </div>
+  );
+}
+
+export function SectionHead({ title, action, onAction }) {
+  return (
+    <div className="section-block__head">
+      <h2 className="section-block__title">{title}</h2>
+      {action && (
+        <button className="link-btn" onClick={onAction} type="button">
+          {action}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Labelled input using the .z-field token styles. */
+export function Field({ label, hint, children, htmlFor }) {
+  return (
+    <div className="z-field">
+      {label && <label htmlFor={htmlFor}>{label}</label>}
+      {children}
+      {hint && <div className="field-hint">{hint}</div>}
+    </div>
+  );
+}
+
+/** Currency input with an RM prefix. */
+export function MoneyInput({ value, onChange, placeholder = "0.00", id, ...rest }) {
+  return (
+    <div className="field-prefix">
+      <span>RM</span>
+      <input
+        id={id}
+        type="number"
+        inputMode="decimal"
+        step="0.01"
+        min="0"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        {...rest}
+      />
+    </div>
+  );
+}
+
+export function NumberInput({ value, onChange, placeholder, suffix, id, ...rest }) {
+  return (
+    <input
+      id={id}
+      type="number"
+      inputMode="decimal"
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      {...rest}
+    />
+  );
+}
+
+export function Segment({ options, value, onChange }) {
+  return (
+    <div className="segment" role="group">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={value === o.value}
+          onClick={() => onChange(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}

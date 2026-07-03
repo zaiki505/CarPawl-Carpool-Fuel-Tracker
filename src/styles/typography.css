@@ -1,0 +1,26 @@
+/* CarPawl typography - mirrors zaiki-design-system/project/tokens/typography.css
+   EXACTLY, minus the Google Fonts CDN @import. The font itself is self-hosted
+   via @fontsource (imported in main.jsx) so the installed PWA works fully
+   offline. Same visual result, no network dependency. */
+
+:root {
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Fluid type scale (verbatim from source clamps) */
+  --text-hero: clamp(3rem, 7vw + 1.4vh, 7.8rem);
+  --text-h1: clamp(2rem, 3vw, 4.5rem);
+  --text-h2: clamp(1.6rem, 3.5vw, 2.8rem);
+  --text-h3: clamp(1.1rem, 2vw, 1.45rem);
+  --text-section-title: clamp(1.25rem, 2.5vw, 1.75rem);
+  --text-body-size: clamp(0.88rem, 1.3vw, 0.98rem);
+  --text-small: clamp(0.84rem, 1.2vw, 0.92rem);
+  --text-kicker: clamp(0.78rem, 1.2vw, 0.9rem);
+  --text-tag: 0.6rem;
+
+  --line-body: 1.6;
+  --line-relaxed: 1.7;
+  --line-tight: 1.05;
+
+  --tracking-kicker: 0.1em;
+  --tracking-tag: 0.05em;
+}

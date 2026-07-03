@@ -1,0 +1,60 @@
+import { groupBalances } from "./calc.js";
+import { formatMoney, formatMoneyShort, formatDate } from "./format.js";
+import { whoName } from "./names.js";
+
+/* Plain-text balances export for sharing (§7.3). Lists every passenger's
+   current outstanding balance in a group. Delivered through the device's native
+   share sheet - never a WhatsApp deep link to a specific contact. */
+export function buildWhatsAppText(group, entries, payments, peopleMap) {
+  const balances = groupBalances(entries, payments);
+  const lines = [];
+  lines.push(`⛽ ${group.name} - fuel balances`);
+  lines.push(`(as of ${formatDate(new Date().toISOString())})`);
+  lines.push("");
+
+  const owing = balances.filter((b) => b.owed > 0);
+  if (owing.length === 0) {
+    lines.push("Everyone's all settled 🎉");
+  } else {
+    for (const b of owing) {
+      let line = `• ${whoName(b.who, peopleMap)}: ${formatMoney(b.owed)}`;
+      if (b.credit > 0) line += ` (${formatMoneyShort(b.credit)} credit held)`;
+      lines.push(line);
+    }
+  }
+
+  const credits = balances.filter((b) => b.credit > 0 && b.owed === 0);
+  if (credits.length) {
+    lines.push("");
+    for (const b of credits) {
+      lines.push(`• ${whoName(b.who, peopleMap)}: ${formatMoneyShort(b.credit)} in credit`);
+    }
+  }
+
+  lines.push("");
+  lines.push("- sent from CarPawl 🐾");
+  return lines.join("\n");
+}
+
+/**
+ * Share text via the native share sheet, falling back to clipboard.
+ * @returns {'shared'|'copied'|'failed'}
+ */
+export async function shareText(text, title) {
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text });
+      return "shared";
+    } catch (e) {
+      // User dismissed the share sheet - not an error worth surfacing.
+      if (e && e.name === "AbortError") return "shared";
+      // fall through to clipboard on other failures
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    return "copied";
+  } catch {
+    return "failed";
+  }
+}

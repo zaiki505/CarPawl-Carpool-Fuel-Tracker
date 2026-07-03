@@ -1,0 +1,36 @@
+/* Central icon set. We use lucide-react (the design system's named nearest
+   match) but keep the source's hand-drawn feel: stroke-based, width 2, round
+   caps/joins - which is lucide's default. Re-exported here so every screen
+   pulls icons from one place and we can tune weight globally if needed. */
+export {
+  LayoutDashboard,
+  Car,
+  Fuel,
+  Wallet,
+  Users,
+  User,
+  Receipt,
+  Calendar,
+  Plus,
+  Trash2,
+  Pencil,
+  Check,
+  X,
+  Upload,
+  Download,
+  Share2,
+  Settings,
+  ChevronRight,
+  ChevronLeft,
+  ChevronDown,
+  ArrowLeft,
+  Archive,
+  ArchiveRestore,
+  TrendingUp,
+  CircleDollarSign,
+  Gauge,
+  MapPin,
+  StickyNote,
+  Info,
+  History,
+} from "lucide-react";
