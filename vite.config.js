@@ -2,14 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
-// CarPawl is a fully offline-capable, installable PWA. Workbox (via
-// vite-plugin-pwa) precaches the app shell + every static asset so the app
-// loads and runs with no network after the first install. There is no backend
-// to fall back to - all data lives in IndexedDB on-device.
 export default defineConfig({
-  // Force a single React instance. Without this, Vite's dep pre-bundling can
-  // give dexie-react-hooks / recharts their own React copy, which triggers
-  // "Invalid hook call" at runtime.
   resolve: {
     dedupe: ["react", "react-dom"],
   },

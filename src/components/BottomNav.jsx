@@ -4,7 +4,7 @@ import { LayoutDashboard, Car, History, Settings, Plus } from "./ui/Icons.jsx";
 
 const ITEMS = [
   { key: "dashboard", label: "Home", Icon: LayoutDashboard },
-  { key: "groups", label: "Groups", Icon: Car },
+  { key: "groups", label: "Vehicles", Icon: Car },
   { key: "history", label: "History", Icon: History },
   { key: "settings", label: "Settings", Icon: Settings },
 ];

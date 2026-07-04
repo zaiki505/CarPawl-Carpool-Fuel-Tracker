@@ -1,12 +1,8 @@
-/* CarPawl app styles - composes new app UI from the Zaiki token system.
-   Nothing here invents a new visual language: every color, radius, shadow and
-   easing pulls from tokens/. New components (nav, sheet, stat cards, list rows,
-   status badges, toasts, empty states) are §6 of the build spec. */
+/* CarPawl app styles:
+   Eevery color, radius, shadow and easing pulls from tokens/. New components (nav, sheet, stat cards, list rows,
+   status badges, toasts, empty states) are of the build spec. */
 
-/* ------------------------------------------------------------------ *
- * Base shell + aurora background (from source: flat dark base + slow
- * drifting purple/pink/blue aurora blobs + faint film grain overlay).
- * ------------------------------------------------------------------ */
+/* --------------------- Base shell + aurora background --------------------- */
 *,
 *::before,
 *::after {
@@ -29,7 +25,7 @@ body.z-body {
   overflow-x: hidden;
 }
 
-/* Aurora + grain live behind everything, fixed to the viewport. */
+/* Aurora + grain live behind everything, fixed to viewport. */
 .app-aurora {
   position: fixed;
   inset: 0;
@@ -72,7 +68,7 @@ body.z-body {
   animation: heroAurora 9s ease-in-out infinite alternate;
   animation-delay: -1.5s;
 }
-/* Faint film grain (SVG noise), opacity 0.05, matches source heroes. */
+
 .app-grain {
   position: fixed;
   inset: 0;
@@ -82,7 +78,7 @@ body.z-body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* App content column sits above the aurora. Mobile-first single column. */
+/* Mobile-first single column. */
 .app-shell {
   position: relative;
   z-index: 1;
@@ -101,9 +97,7 @@ body.z-body {
   }
 }
 
-/* ------------------------------------------------------------------ *
- * Screen header
- * ------------------------------------------------------------------ */
+/* ----------------------- Screen header ----------------------- */
 .screen-head {
   display: flex;
   align-items: flex-end;
@@ -132,9 +126,13 @@ body.z-body {
   margin: 0.3rem 0 0 0;
 }
 
-/* Staggered blur-slide entrance for stacked sections (source signature). */
+/* Staggered blur-slide entrance for stacked sections.
+   NOTE: fill-mode is `backwards`, not `both`, on purpose. `both` retains the
+   final keyframe's `filter: blur(0)`, and any lingering filter creates a
+   stacking context that would trap child overlays' z-index (dropdowns, date
+   pickers) beneath later sections. `backwards` reverts to no filter once done. */
 .stagger > * {
-  animation: stackSlideIn var(--dur-entrance) var(--ease-out-expo) both;
+  animation: stackSlideIn var(--dur-entrance) var(--ease-out-expo) backwards;
 }
 .stagger > *:nth-child(1) { animation-delay: 0.02s; }
 .stagger > *:nth-child(2) { animation-delay: 0.1s; }
@@ -175,9 +173,7 @@ body.z-body {
 }
 .link-btn:hover { text-decoration: underline; }
 
-/* ------------------------------------------------------------------ *
- * Stat / summary cards (extend .bento-card)
- * ------------------------------------------------------------------ */
+/* ---------------------- Stat / summary cards (extend .bento-card) ---------------------- */
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -229,9 +225,7 @@ body.z-body {
   color: var(--text-faint);
 }
 
-/* ------------------------------------------------------------------ *
- * List rows (glass panel, like .timeline-item / .detail-panel)
- * ------------------------------------------------------------------ */
+/* ---------------- List rows (glass panel, like .timeline-item / .detail-panel) ---------------- */
 .list-row {
   width: 100%;
   text-align: left;
@@ -293,9 +287,7 @@ body.z-body {
 }
 .list-row__amount { font-weight: bold; font-size: 0.95rem; }
 
-/* ------------------------------------------------------------------ *
- * Status badges (Unpaid / Partial / Paid / Credit) - small pills
- * ------------------------------------------------------------------ */
+/* ---------------- Status badges (Unpaid / Partial / Paid / Credit) - small pills ------------ */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -337,28 +329,44 @@ body.z-body {
   border-color: var(--tag-web-border);
 }
 
-/* ------------------------------------------------------------------ *
- * Buttons that extend the token button recipes
- * ------------------------------------------------------------------ */
+/* ------------------ Buttons that extend the token button recipes ------------------ */
 .btn-row {
   display: flex;
   gap: 0.6rem;
   flex-wrap: wrap;
 }
 .btn-block { width: 100%; justify-content: center; }
+/* Red buttons carry a bright red glow, never a purple one (#17). */
 .btn-danger {
   background: rgba(255, 23, 68, 0.12);
-  border: 1px solid rgba(255, 23, 68, 0.35);
+  border: 1px solid rgba(255, 23, 68, 0.4);
   color: #ff6b81;
+  box-shadow: 0 4px 18px rgba(255, 23, 68, 0.28) !important;
 }
 .btn-danger:hover {
   background: rgba(255, 23, 68, 0.2);
   transform: translateY(-2px);
+  box-shadow: 0 8px 26px rgba(255, 23, 68, 0.45) !important;
+}
+/* Solid red confirm button (overrides the purple cta-primary glow). */
+.cta-primary.btn-danger {
+  background: #ff2d55;
+  border-color: #ff2d55;
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(255, 23, 68, 0.5) !important;
+}
+.cta-primary.btn-danger:hover {
+  background: #ff4d6d;
+  color: #fff;
+  box-shadow: 0 8px 28px rgba(255, 23, 68, 0.62) !important;
+}
+.fab-add.fab-add--danger {
+  background: #ff2d55;
+  border-color: #ff2d55;
+  box-shadow: 0 4px 20px rgba(255, 23, 68, 0.5);
 }
 
-/* ------------------------------------------------------------------ *
- * Number / text inputs (extend .z-field)
- * ------------------------------------------------------------------ */
+/* ----------------- Number / text inputs (extend .z-field) ------------------- */
 .field-grid {
   display: grid;
   gap: 0.9rem;
@@ -393,9 +401,7 @@ body.z-body {
   margin-top: 0.3rem;
 }
 
-/* ------------------------------------------------------------------ *
- * Empty states
- * ------------------------------------------------------------------ */
+/* --------------- Empty states ----------------- */
 .empty-state {
   text-align: center;
   padding: 2.4rem 1.5rem;
@@ -412,10 +418,7 @@ body.z-body {
 }
 .empty-state__body { font-size: var(--text-small); margin: 0; }
 
-/* ------------------------------------------------------------------ *
- * Bottom navigation pill (§6) - adapts the source's floating nav pill
- * into a thumb-reach, bottom-fixed bar.
- * ------------------------------------------------------------------ */
+/* ------------------- Bottom navigation pill (§6) -------------------- */
 .bottom-nav {
   position: fixed;
   left: 50%;
@@ -507,9 +510,7 @@ body.light .bottom-nav__pill {
 .fab-add:active { transform: translateY(2px) scale(0.9); }
 .fab-add svg { width: 26px; height: 26px; }
 
-/* ------------------------------------------------------------------ *
- * Bottom sheet (§6) - glass panel entering with stackSlideIn.
- * ------------------------------------------------------------------ */
+/* ------------------- Bottom sheet (§6) - glass panel entering with stackSlideIn. ------------------- */
 .sheet-scrim {
   position: fixed;
   inset: 0;
@@ -567,6 +568,45 @@ body.light .bottom-nav__pill {
   padding: 0.5rem 1.2rem 0.8rem;
   flex: 0 0 auto;
 }
+
+.sheet__banner {
+  flex: 0 0 auto;
+  padding: 0.7rem 1.2rem;
+  border-top: 1px solid var(--border-hairline);
+  border-bottom: 1px solid var(--border-hairline);
+  background: var(--accent-wash-06);
+}
+.sheet-banner {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.sheet-banner__label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: bold;
+}
+.sheet-banner__amount { font-size: 1.35rem; font-weight: 800; }
+
+/* Form section headings (Add/Edit fill-up grouping, #4) */
+.form-section-head {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: bold;
+  color: var(--highlight);
+  padding-top: 0.9rem;
+  margin-top: 0.2rem;
+  border-top: 1px solid var(--border-hairline);
+}
+.field-grid > .form-section-head:first-child {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
 .sheet__title { margin: 0; font-size: 1.15rem; font-weight: 800; }
 .sheet__body {
   overflow-y: auto;
@@ -596,9 +636,7 @@ body.light .bottom-nav__pill {
 .icon-btn:hover { color: var(--highlight); background: var(--accent-wash-12); }
 .icon-btn:active { transform: scale(0.9); }
 
-/* ------------------------------------------------------------------ *
- * Toasts (extend .form-status success/error banner)
- * ------------------------------------------------------------------ */
+/* ------------------- Toasts (extend .form-status success/error banner) ------------------- */
 .toast-wrap {
   position: fixed;
   left: 50%;
@@ -637,9 +675,7 @@ body.light .bottom-nav__pill {
   color: var(--accent-soft);
 }
 
-/* ------------------------------------------------------------------ *
- * Modal confirm dialog (destructive actions)
- * ------------------------------------------------------------------ */
+/* ------------ Modal confirm dialog (destructive actions) ------------------- */
 .modal-scrim {
   position: fixed;
   inset: 0;
@@ -667,14 +703,19 @@ body.light .bottom-nav__pill {
 
 /* Segmented control (e.g. ownership choice, filters) */
 .segment {
+  position: relative;
   display: flex;
   gap: 0.3rem;
   padding: 0.3rem;
+  margin: 0.5rem 0;
   background: var(--surface-chip);
   border: 1px solid var(--border-chip);
   border-radius: var(--radius-pill);
+  isolation: isolate;
 }
 .segment button {
+  position: relative;
+  z-index: 1;
   flex: 1;
   border: none;
   background: none;
@@ -685,11 +726,23 @@ body.light .bottom-nav__pill {
   padding: 0.5rem 0.6rem;
   border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: background 0.3s var(--ease-bounce), color 0.3s ease;
+  transition: color 0.3s ease;
 }
-.segment button[aria-pressed="true"] {
+.segment button[aria-pressed="true"] { color: var(--lightFont); }
+/* Gliding squish-stretch indicator (matches the bottom nav) */
+.segment__indicator {
+  position: absolute;
+  z-index: 0;
+  top: 0.3rem;
+  bottom: 0.3rem;
+  border-radius: var(--radius-pill);
   background: var(--highlight);
-  color: var(--lightFont);
+  box-shadow: var(--shadow-accent-soft);
+  transition: left 0.5s var(--ease-bounce), width 0.5s var(--ease-bounce);
+}
+.segment__indicator.is-moving { animation: navPillSquish 0.5s var(--ease-bounce); }
+@media (prefers-reduced-motion: reduce) {
+  .segment__indicator { transition: none; animation: none; }
 }
 
 /* Selectable chip (passenger / group pickers) */
@@ -728,9 +781,7 @@ body.light .bottom-nav__pill {
 .accent-text { color: var(--highlight); }
 .nowrap { white-space: nowrap; }
 
-/* ------------------------------------------------------------------ *
- * Charts
- * ------------------------------------------------------------------ */
+/* ----------------------- Charts ---------------------- */
 .chart-card {
   background: var(--surface-glass-panel);
   -webkit-backdrop-filter: blur(10px);
@@ -752,9 +803,7 @@ body.light .bottom-nav__pill {
 }
 .chart-block__title svg { color: var(--highlight); }
 
-/* ------------------------------------------------------------------ *
- * Entry card (expandable fill-up)
- * ------------------------------------------------------------------ */
+/* --------------------- Entry card (expandable fill-up) ------------------------------- */
 .entry-card {
   background: var(--surface-glass-panel);
   -webkit-backdrop-filter: blur(10px);
@@ -788,7 +837,7 @@ body.light .bottom-nav__pill {
 .entry-card__chev.is-open { transform: rotate(180deg); color: var(--highlight); }
 .entry-card__body {
   padding: 0 1rem 1rem;
-  animation: stackSlideIn 0.4s var(--ease-out-expo) both;
+  animation: stackSlideIn 0.4s var(--ease-out-expo) backwards;
 }
 @media (prefers-reduced-motion: reduce) {
   .entry-card__body { animation: none; }
@@ -870,9 +919,7 @@ body.light .bottom-nav__pill {
   background: rgba(255, 23, 68, 0.12);
 }
 
-/* ------------------------------------------------------------------ *
- * Group Detail bits
- * ------------------------------------------------------------------ */
+/* ------------------- Group Detail bits ------------------- */
 .detail-summary {
   display: flex;
   align-items: center;
@@ -941,10 +988,26 @@ body.light .bottom-nav__pill {
   border: 1px solid var(--border-hairline);
   font-size: 0.85rem;
 }
+.payment-context__balance {
+  width: 100%;
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border-hairline);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.payment-context__label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: bold;
+}
+.payment-context__amount { font-size: 1.5rem; font-weight: 800; }
 
-/* ------------------------------------------------------------------ *
- * Add Entry sheet
- * ------------------------------------------------------------------ */
+/* ------------------- Add Entry sheet ------------------- */
 /* select fields share the .z-field input look */
 .z-field select,
 .filter-field select,
@@ -1070,9 +1133,174 @@ body.light .pax-dist-row__input input {
   font-weight: bold;
 }
 
-/* ------------------------------------------------------------------ *
- * Settings
- * ------------------------------------------------------------------ */
+/* Custom Select / MultiSelect dropdown */
+.z-select { position: relative; }
+.z-select__trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-chip);
+  border-radius: 10px;
+  padding: 0.6rem 0.7rem;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.z-select__trigger:hover { border-color: var(--accent-border-40); }
+.z-select__trigger[aria-expanded="true"] {
+  border-color: var(--accent-border-40);
+  box-shadow: 0 0 0 3px rgba(167, 84, 255, 0.12);
+}
+body.light .z-select__trigger {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
+  color: var(--darkFont);
+}
+.z-select__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.z-select__chev { color: var(--text-faint); flex: 0 0 auto; transition: transform 0.25s ease; }
+.z-select__chev.is-open { transform: rotate(180deg); color: var(--highlight); }
+/* Positioned by inline style (portalled to <body>, position: fixed). */
+.z-select__menu {
+  z-index: 500;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--bg-menu);
+  border: 1px solid var(--border-accent);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card-hover);
+  padding: 0.3rem;
+  animation: scaleInFade 0.18s var(--ease-bounce) both;
+}
+.z-select__opt {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  background: none;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 0.55rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.z-select__opt:hover { background: var(--surface-chip); }
+.z-select__opt.is-on { color: var(--highlight); }
+.z-select__check {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+}
+
+/* Custom date picker */
+.z-datepicker { position: relative; }
+.z-dp-clear {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.z-dp-clear:hover { color: #ff6b81; background: rgba(255, 23, 68, 0.12); }
+/* Positioned by inline style (portalled to <body>, position: fixed). */
+.z-dp-menu {
+  z-index: 500;
+  width: 276px;
+  max-width: 92vw;
+  background: var(--bg-menu);
+  border: 1px solid var(--border-accent);
+  border-radius: 14px;
+  box-shadow: var(--shadow-card-hover);
+  padding: 0.7rem;
+  animation: scaleInFade 0.18s var(--ease-bounce) both;
+}
+.z-dp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.z-dp-month { font-weight: bold; font-size: 0.88rem; }
+.z-dp-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.z-dp-weekdays {
+  margin-bottom: 0.25rem;
+}
+.z-dp-weekdays span {
+  text-align: center;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  padding: 0.2rem 0;
+}
+.z-dp-day {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.z-dp-day:hover { background: var(--surface-chip); }
+.z-dp-day.is-today { color: var(--highlight); font-weight: bold; }
+.z-dp-day.is-sel {
+  background: var(--highlight);
+  color: var(--lightFont);
+  box-shadow: var(--shadow-accent-soft);
+}
+.z-dp-foot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.55rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--border-hairline);
+}
+
+.filter-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  background: var(--accent-wash-06);
+}
+.filter-summary__who { font-weight: bold; font-size: 0.85rem; color: var(--highlight); }
+.filter-summary__nums {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.filter-summary__nums strong { color: var(--text-primary); }
+.filter-summary__nums .pos strong { color: var(--available); }
+.filter-summary__nums .neg strong { color: var(--unavailable); }
+
+  /* ------------------------------ Settings --------------------------------- */
 .fixed-fmt {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -1131,6 +1359,23 @@ body.light .people-row__edit {
   color: var(--darkFont);
 }
 
+.btn-row--center { justify-content: center; }
+
+.add-person-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+.add-person-row input { flex: 1 1 auto; min-width: 0; }
+.add-person-row .cta-primary {
+  flex: 0 0 auto;
+  padding: 0.6rem 1.1rem;
+  white-space: nowrap;
+}
+.add-person-row .cta-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.people-row__actions { display: flex; gap: 0.4rem; flex: 0 0 auto; }
+
 .settings-footer {
   display: flex;
   flex-direction: column;
@@ -1157,9 +1402,7 @@ body.light .people-row__edit {
   .cat-egg { animation: none; }
 }
 
-/* ------------------------------------------------------------------ *
- * Passenger payment history + split chips (EntryCard, Pass 2)
- * ------------------------------------------------------------------ */
+/* --------------------- Passenger payment history + split chips (EntryCard) --------------------- */
 .pax-row {
   flex-direction: column;
   align-items: stretch;
@@ -1203,6 +1446,183 @@ body.light .people-row__edit {
 .pay-chip__btn:hover { color: var(--highlight); background: var(--accent-wash-12); }
 .pay-chip__btn--danger:hover { color: #ff6b81; background: rgba(255, 23, 68, 0.12); }
 
+.entry-date {
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+/* Distinct icon backgrounds so vehicles / carpools / fill-ups read apart */
+.list-row__icon--vehicle {
+  background: var(--accent-wash-16);
+  border-color: var(--accent-border-40);
+  color: var(--highlight);
+}
+.list-row__icon--carpool {
+  background: var(--tag-web-bg);
+  border-color: var(--tag-web-border);
+  color: var(--tag-web);
+}
+.list-row__icon--fillup {
+  background: var(--tag-creative-bg);
+  border-color: var(--tag-creative-border);
+  color: var(--tag-creative);
+}
+
+.pax-row--me { background: var(--accent-wash-06); border-style: dashed; }
+.balance-row--me { opacity: 0.85; }
+.balance-row--me .balance-row__name { font-weight: bold; }
+
+/* Fuel spend card */
+/* Phones: label on top, period toggle full-width below it - big tap targets,
+   no wrapped button text. Wider screens tuck the toggle back beside the label. */
+.fuel-spend-card__head {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  margin-bottom: 0.1rem;
+}
+.fuel-spend-card__head .segment {
+  padding: 0.2rem;
+  width: 100%;
+}
+.fuel-spend-card__head .segment button {
+  font-size: clamp(0.62rem, 2.7vw, 0.7rem);
+  padding: 0.34rem 0.4rem;
+  white-space: nowrap;
+}
+@media (min-width: 440px) {
+  .fuel-spend-card__head {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .fuel-spend-card__head .segment { width: auto; }
+}
+.fuel-spend-card__break {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1rem;
+  font-size: clamp(0.72rem, 3vw, 0.78rem);
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+}
+.fuel-spend-card__break strong { color: var(--text-primary); }
+.fuel-spend-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.3rem;
+  font-size: clamp(0.68rem, 2.8vw, 0.72rem);
+}
+.fuel-spend-card__trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.see-more-btn {
+  background: none;
+  border: none;
+  color: var(--highlight);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0.2rem 0.3rem;
+  align-self: center;
+}
+.see-more-btn:hover { text-decoration: underline; }
+
+/* Swipe-to-settle (#8) */
+.swipe-settle {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  touch-action: pan-y;
+}
+.swipe-settle__bg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  padding-right: 1.1rem;
+  font-size: 0.78rem;
+  font-weight: bold;
+  color: #fff;
+  background: linear-gradient(90deg, rgba(0, 230, 118, 0.25), #0bb865);
+  transition: background 0.15s ease;
+}
+.swipe-settle__bg.is-armed { background: linear-gradient(90deg, rgba(0, 230, 118, 0.4), #00c46e); }
+/* Right-swipe backing: clear this passenger's payments. Latches open with an X. */
+.swipe-settle__bg--delete {
+  justify-content: flex-start;
+  padding-left: 0.6rem;
+  padding-right: 0;
+  background: linear-gradient(270deg, rgba(255, 59, 92, 0.25), #e23e5c);
+  transition: opacity 0.15s ease;
+}
+.swipe-settle__x {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: none;
+  border-radius: 8px;
+  padding: 0.42rem 0.72rem;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: bold;
+  cursor: pointer;
+}
+.swipe-settle__x:hover { background: rgba(255, 255, 255, 0.32); }
+.swipe-settle__fg {
+  position: relative;
+  z-index: 1;
+  will-change: transform;
+  /* Opaque base so the coloured backings can't show through the row's
+     translucent surface tint. Matches the card interior closely. */
+  background: var(--bg-page);
+}
+
+/* Thanos snap: the chips blur, drift up and erode away edge-first before their
+   records are wiped. Mask sweep + blur fakes the dust without any particles. */
+@keyframes thanosDissolve {
+  0% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translate(0, 0) scale(1);
+    -webkit-mask-position: 0% 0;
+    mask-position: 0% 0;
+  }
+  100% {
+    opacity: 0;
+    filter: blur(5px);
+    transform: translate(16px, -12px) scale(1.03);
+    -webkit-mask-position: 140% 0;
+    mask-position: 140% 0;
+  }
+}
+.pay-history.is-dissolving {
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(105deg, #000 42%, transparent 62%);
+  mask-image: linear-gradient(105deg, #000 42%, transparent 62%);
+  -webkit-mask-size: 260% 100%;
+  mask-size: 260% 100%;
+  animation: thanosDissolve 0.56s cubic-bezier(0.4, 0, 0.6, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pay-history.is-dissolving { animation-duration: 0.2s; transform: none; }
+}
+
 .split-chip-row {
   display: flex;
   flex-wrap: wrap;
@@ -1211,9 +1631,7 @@ body.light .people-row__edit {
 }
 .split-chip-row .chip-fact { font-size: 0.68rem; padding: 0.25rem 0.6rem; }
 
-/* ------------------------------------------------------------------ *
- * Action menu (balance-row tap)
- * ------------------------------------------------------------------ */
+/* ------------------- Action menu (balance-row tap) ------------------- */
 .action-menu { display: flex; flex-direction: column; gap: 0.5rem; }
 .action-menu__item {
   display: flex;

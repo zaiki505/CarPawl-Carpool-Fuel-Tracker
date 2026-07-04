@@ -1,34 +1,45 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Sheet } from "./ui/Sheet.jsx";
 import { Field, MoneyInput } from "./ui/Primitives.jsx";
+import { DatePicker } from "./ui/DatePicker.jsx";
 import { createPayment, updatePayment, removePayment } from "../db/actions.js";
 import { useApp } from "../app/AppContext.jsx";
 import { usePaymentsForEntry } from "../db/hooks.js";
 import { outstanding } from "../lib/calc.js";
 import { formatMoney, formatMoneyShort, todayISODate } from "../lib/format.js";
 import { whoName } from "../lib/names.js";
+import { confettiBurst } from "../lib/confetti.js";
 import { Trash2 } from "./ui/Icons.jsx";
 
-/* Record OR edit a payment against a specific entry + passenger (§7.3, §8).
-   Overpayment is allowed — we never cap the amount at the remaining outstanding.
+/* Record OR edit a payment against a specific entry + passenger.
+   Overpayment is allowed - we never cap the amount at the remaining outstanding.
    When `payment` is passed, the sheet edits (and can delete) that payment. */
 export function PaymentSheet({ entry, who, payment, peopleMap, onClose }) {
   const editing = Boolean(payment);
   const { toast, askConfirm } = useApp();
-  const entryPayments = usePaymentsForEntry(entry.id) || [];
+  const entryPaymentsRaw = usePaymentsForEntry(entry.id);
+  const entryPayments = entryPaymentsRaw || [];
   // Outstanding excluding the payment being edited (so the prefill is sensible).
   const others = editing
     ? entryPayments.filter((p) => p.id !== payment.id)
     : entryPayments;
   const out = outstanding(entry, who, others);
 
-  const [amount, setAmount] = useState(
-    editing ? String(payment.amount) : out > 0 ? out.toFixed(2) : ""
-  );
+  const [amount, setAmount] = useState(editing ? String(payment.amount) : "");
+  const [amtInited, setAmtInited] = useState(editing);
   const [date, setDate] = useState(editing ? payment.date : todayISODate());
   const [note, setNote] = useState(editing ? payment.note || "" : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  // Default the amount to the outstanding balance once payments have loaded
+  // Doing this in an effect avoids seeding from a stale pre-load value.
+  useEffect(() => {
+    if (!amtInited && entryPaymentsRaw !== undefined) {
+      setAmount(out > 0 ? out.toFixed(2) : "");
+      setAmtInited(true);
+    }
+  }, [entryPaymentsRaw, amtInited, out]);
 
   async function save() {
     setError("");
@@ -46,6 +57,8 @@ export function PaymentSheet({ entry, who, payment, peopleMap, onClose }) {
         await createPayment({ entryId: entry.id, who, amount: amt, date, note });
         toast(`Payment of ${formatMoney(amt)} recorded`);
       }
+      // Celebrate when this payment clears their balance for the fill-up.
+      if (amt >= out - 0.005) confettiBurst();
       onClose();
     } catch (e) {
       setError(e.message);
@@ -94,15 +107,24 @@ export function PaymentSheet({ entry, who, payment, peopleMap, onClose }) {
           <strong>{name}</strong>
           <span className="muted">for</span>
           <strong>{entry.title || "this fill-up"}</strong>
-          <div style={{ marginTop: "0.35rem", width: "100%" }}>
+          <div className="payment-context__balance">
             {out > 0 ? (
-              <span className="faint">Outstanding: {formatMoney(out)}</span>
+              <>
+                <span className="payment-context__label">Outstanding</span>
+                <span className="payment-context__amount neg">{formatMoney(out)}</span>
+              </>
             ) : out < 0 ? (
-              <span className="faint">
-                Already {formatMoneyShort(Math.abs(out))} in credit — extra goes further into credit.
-              </span>
+              <>
+                <span className="payment-context__label">In credit</span>
+                <span className="payment-context__amount accent-text">
+                  {formatMoney(Math.abs(out))}
+                </span>
+              </>
             ) : (
-              <span className="faint">Settled — any amount becomes a credit.</span>
+              <>
+                <span className="payment-context__label">Settled</span>
+                <span className="payment-context__amount pos">{formatMoney(0)}</span>
+              </>
             )}
           </div>
         </div>
@@ -113,7 +135,7 @@ export function PaymentSheet({ entry, who, payment, peopleMap, onClose }) {
 
         <div className="field-inline">
           <Field label="Date">
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <DatePicker value={date} onChange={setDate} />
           </Field>
           <Field label="Note (optional)">
             <input

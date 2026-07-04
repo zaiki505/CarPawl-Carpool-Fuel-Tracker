@@ -12,7 +12,7 @@ import { efficiencyTrend } from "../lib/calc.js";
 import { formatDateShort, formatKmpl } from "../lib/format.js";
 import { EmptyState } from "./ui/Primitives.jsx";
 
-/* Fuel efficiency trend (§4.8): last 30 days, measured entries only. If a group
+/* Fuel efficiency trend: last 30 days, measured entries only. If a group
    has no measured readings in the window we show a friendly nudge to add a real
    distance/liters next time - never a flat/fake line. */
 export function EfficiencyChart({ entries }) {

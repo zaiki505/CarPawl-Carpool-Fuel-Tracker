@@ -5,8 +5,8 @@ import { GroupCard } from "../components/GroupCard.jsx";
 import { EmptyState } from "../components/ui/Primitives.jsx";
 import { Plus } from "../components/ui/Icons.jsx";
 
-/* Groups screen (§7.2) - My Vehicle(s) and Carpools in two separate sections,
-   never one flat list. "+ Add group" opens the ownership-aware create sheet. */
+/* Groups screen (7.2) - My Vehicle(s) and Carpools in two separate sections.
+"+ Add group" opens the ownership aware create sheet. */
 export function Groups() {
   const data = useAllData();
   const { openGroup, openSheet } = useApp();
@@ -19,7 +19,7 @@ export function Groups() {
       <header className="screen-head">
         <div>
           <p className="screen-head__kicker">Your vehicles & carpools</p>
-          <h1 className="screen-head__title">Groups</h1>
+          <h1 className="screen-head__title">Vehicles</h1>
         </div>
         <button
           className="cta-primary"
@@ -59,7 +59,7 @@ export function Groups() {
         </h2>
         {nonOwnedGroups.length === 0 ? (
           <EmptyState emoji="🧑‍🤝‍🧑" title="No carpools yet">
-            Riding in someone else's car? Add a group and choose “Someone
+            Riding in someone else's car? Add a vehicle and choose “Someone
             else's” to track your share.
           </EmptyState>
         ) : (

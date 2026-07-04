@@ -1,8 +1,8 @@
 import React from "react";
 import { GroupForm } from "../components/GroupForm.jsx";
 
-/* First-run screen (§5). Goes straight into "add your car" with ownerType fixed
-   to 'me' - the only group creation that skips the ownership question. */
+/* First-run screen (5). Goes into "add your car" with ownerType fixed
+   to 'me', the only group creation that skips the ownership question. */
 export function Onboarding({ onDone }) {
   return (
     <div className="app-shell stagger" style={{ paddingBottom: "3rem" }}>

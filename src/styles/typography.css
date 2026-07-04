@@ -1,7 +1,5 @@
-/* CarPawl typography - mirrors zaiki-design-system/project/tokens/typography.css
-   EXACTLY, minus the Google Fonts CDN @import. The font itself is self-hosted
-   via @fontsource (imported in main.jsx) so the installed PWA works fully
-   offline. Same visual result, no network dependency. */
+/* CarPawl typography: The font is self-hosted via @fontsource (imported in main.jsx) so installed PWA works fully
+   offline */
 
 :root {
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;

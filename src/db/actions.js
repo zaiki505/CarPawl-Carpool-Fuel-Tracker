@@ -1,7 +1,14 @@
-import { db, newId, nowISO, getSettings, updateSettings } from "./db.js";
+import {
+  db,
+  newId,
+  nowISO,
+  getSettings,
+  updateSettings,
+  ensureSettings,
+} from "./db.js";
 import { whoEquals, whoKey } from "../lib/identity.js";
 
-/* Write operations + business rules (build spec §3, §3.1, §8).
+/* Write operations + business rules.
    Everything that mutates the DB lives here so the rules (archiving instead of
    deleting when history exists, blocking passenger removal when payments exist,
    cascading entry->payment deletes) live in one place. */
@@ -53,7 +60,16 @@ export async function removePerson(id) {
 }
 
 export async function restorePerson(id) {
-  await db.people.update(id, { isArchived: false });
+  await db.people.update(id, { isArchived: false, cleared: false });
+}
+
+/** "Clear" an archived person: collapse the row to a tiny name-only stub so it
+ *  leaves the Archived list but past fill-ups still resolve their name and all
+ *  historical totals stay correct. */
+export async function clearPerson(id) {
+  const p = await db.people.get(id);
+  if (!p) return;
+  await db.people.put({ id: p.id, name: p.name, isArchived: true, cleared: true });
 }
 
 /* ============================ Groups ============================ */
@@ -106,7 +122,22 @@ export async function removeGroup(id) {
 }
 
 export async function restoreGroup(id) {
-  await db.groups.update(id, { isArchived: false });
+  await db.groups.update(id, { isArchived: false, cleared: false });
+}
+
+/** "Clear" an archived group: collapse to a minimal stub. Its fill-ups stay in
+ *  History with the right name; it just leaves the Archived list. */
+export async function clearGroup(id) {
+  const g = await db.groups.get(id);
+  if (!g) return;
+  await db.groups.put({
+    id: g.id,
+    name: g.name,
+    ownerType: g.ownerType,
+    ownerPersonId: g.ownerPersonId ?? null,
+    isArchived: true,
+    cleared: true,
+  });
 }
 
 /* ============================ Entries ============================ */
@@ -143,7 +174,7 @@ export async function createEntry(entry) {
 }
 
 /**
- * Update an entry. Enforces §8: a passenger with payments recorded against them
+ * Update an entry. Enforces a passenger with payments recorded against them
  * cannot be removed until those payments are dealt with. Existing payment rows
  * are never touched here - only the entry's own fields change; outstanding is
  * recalculated downstream from the new share().
@@ -236,6 +267,12 @@ export async function removePayment(id) {
   await db.payments.delete(id);
 }
 
+/** Wipe a set of payments in one go (swipe-to-clear on a passenger row). */
+export async function clearPayments(ids) {
+  if (!ids?.length) return;
+  await db.payments.bulkDelete(ids);
+}
+
 /* ===================== Onboarding / bulk ===================== */
 
 /** Mark the app as onboarded once the first (owned) car exists. */
@@ -253,4 +290,76 @@ export async function createFirstCar({ name, defaultKmPerLiter }) {
   });
   await markOnboarded();
   return group;
+}
+
+/** Permanently delete a group AND all its fill-ups + their payments (cascade).
+ *  Destructive - confirm first. */
+export async function permanentlyDeleteGroup(id) {
+  await db.transaction("rw", db.groups, db.entries, db.payments, async () => {
+    const entryIds = await db.entries.where("groupId").equals(id).primaryKeys();
+    if (entryIds.length) await db.payments.where("entryId").anyOf(entryIds).delete();
+    await db.entries.where("groupId").equals(id).delete();
+    await db.groups.delete(id);
+  });
+}
+
+/** Permanently delete a person: cascade-delete any carpools they OWN (and those
+ *  carpools' fill-ups + payments), remove them from every remaining fill-up's
+ *  passengers, delete their own payments, and remove the person record. */
+export async function permanentlyDeletePerson(id) {
+  await db.transaction("rw", db.people, db.groups, db.entries, db.payments, async () => {
+    // 1. Carpools this person owns cascade away entirely (no dangling owner).
+    const ownedGroupIds = await db.groups
+      .where("ownerPersonId")
+      .equals(id)
+      .primaryKeys();
+    for (const gid of ownedGroupIds) {
+      const eIds = await db.entries.where("groupId").equals(gid).primaryKeys();
+      if (eIds.length) await db.payments.where("entryId").anyOf(eIds).delete();
+      await db.entries.where("groupId").equals(gid).delete();
+    }
+    if (ownedGroupIds.length) await db.groups.bulkDelete(ownedGroupIds);
+
+    // 2. Their own payments (in carpools they ride in).
+    const payments = await db.payments.toArray();
+    const theirPayIds = payments
+      .filter((pm) => pm.who?.type === "person" && pm.who.personId === id)
+      .map((pm) => pm.id);
+    if (theirPayIds.length) await db.payments.bulkDelete(theirPayIds);
+
+    // 3. Strip them from every remaining fill-up's passengers.
+    const entries = await db.entries.toArray();
+    for (const e of entries) {
+      const kept = (e.passengers || []).filter(
+        (p) => !(p.who?.type === "person" && p.who.personId === id)
+      );
+      if (kept.length !== (e.passengers || []).length) {
+        await db.entries.update(e.id, { passengers: kept, updatedAt: nowISO() });
+      }
+    }
+    await db.people.delete(id);
+  });
+}
+
+/** Wipe every table and reset to a fresh, un-onboarded state. Destructive -
+ *  callers must double-confirm with the user first (§8). */
+export async function clearAllData() {
+  await db.transaction(
+    "rw",
+    db.people,
+    db.groups,
+    db.entries,
+    db.payments,
+    db.settings,
+    async () => {
+      await Promise.all([
+        db.people.clear(),
+        db.groups.clear(),
+        db.entries.clear(),
+        db.payments.clear(),
+        db.settings.clear(),
+      ]);
+    }
+  );
+  await ensureSettings(); // fresh settings row, onboardedAt = null
 }

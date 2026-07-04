@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Sheet } from "./ui/Sheet.jsx";
 import { Field, MoneyInput, Segment } from "./ui/Primitives.jsx";
+import { DatePicker } from "./ui/DatePicker.jsx";
 import {
   useGroups,
   usePeople,
@@ -11,7 +12,13 @@ import {
   usePaymentsForEntry,
 } from "../db/hooks.js";
 import { createEntry, updateEntry, createPerson } from "../db/actions.js";
-import { deriveEntryTotals, shareOfRow, driverCompBase } from "../lib/calc.js";
+import {
+  deriveEntryTotals,
+  shareOfRow,
+  driverCompBase,
+  entryTotalBillable,
+  share,
+} from "../lib/calc.js";
 import { SPLIT_METHOD_OPTIONS, SPLIT_METHOD_HINTS } from "../lib/splitMethods.js";
 import {
   formatMoney,
@@ -33,7 +40,7 @@ import { Check, Plus, Car, Fuel } from "./ui/Icons.jsx";
    gets a distance defaulting to the full trip, shortenable for early drop-off.
    Edit mode warns before recalculating balances and blocks removing a
    passenger who already has payments (§8). */
-export function AddEntrySheet({ entryId, onClose }) {
+export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
   const editing = Boolean(entryId);
   const groups = useGroups() || [];
   const people = usePeople() || [];
@@ -65,7 +72,7 @@ export function AddEntrySheet({ entryId, onClose }) {
   const [primaryValue, setPrimaryValue] = useState("");
   const [fuelPrice, setFuelPrice] = useState("");
   const [secondValue, setSecondValue] = useState("");
-  // passengers: { who, distance, custom } — custom tracks manual distance edits
+  // passengers: { who, distance, custom } - custom tracks manual distance edits
   const [passengers, setPassengers] = useState([]);
   const [date, setDate] = useState(todayISODate());
   const [title, setTitle] = useState("");
@@ -113,7 +120,12 @@ export function AddEntrySheet({ entryId, onClose }) {
         setReady(true);
       }
     } else {
-      setGroupId(orderedGroups[0]?.id || null);
+      // Pre-select the vehicle when opened from its page (§16), else most recent.
+      const preselect =
+        preselectGroupId && groups.some((g) => g.id === preselectGroupId)
+          ? preselectGroupId
+          : orderedGroups[0]?.id || null;
+      setGroupId(preselect);
       setFuelPrice(String(settings.defaultFuelPricePerLiter));
       setSplitMethod(settings.defaultSplitMethod || "distance");
       setMaintenancePct(String(settings.defaultMaintenancePct ?? 10));
@@ -163,6 +175,12 @@ export function AddEntrySheet({ entryId, onClose }) {
       distanceAssigned: parseNum(p.distance) || 0,
     })),
   };
+  // Banner figure (§10): in your own vehicle, what you'll collect from
+  // passengers (incl tolls/parking/maintenance); in a carpool, your own share.
+  const bannerAmount = isOwned
+    ? entryTotalBillable(previewEntry, { excludeMe: true })
+    : share(previewEntry, ME);
+  const bannerLabel = isOwned ? "You'll collect" : "Your share to pay";
 
   // --- passenger candidates ---
   const usualWhoKeys = useMemo(() => {
@@ -176,10 +194,12 @@ export function AddEntrySheet({ entryId, onClose }) {
 
   const candidates = useMemo(() => {
     const list = [];
-    if (group && !isOwned) list.push(ME); // "me" only in non-owned groups
+    // "Me" is selectable in any vehicle now. In your own vehicle your share is
+    // tracked for reference but never owed to you (§18 update).
+    if (group) list.push(ME);
     for (const p of people) list.push(mkPerson(p.id));
     return list;
-  }, [group, isOwned, people]);
+  }, [group, people]);
 
   const selectedKeys = new Set(syncedPassengers.map((p) => whoKey(p.who)));
   const suggested = candidates.filter((w) => usualWhoKeys.has(whoKey(w)));
@@ -225,7 +245,7 @@ export function AddEntrySheet({ entryId, onClose }) {
 
   async function save() {
     setError("");
-    if (!groupId) return setError("Pick a group first.");
+    if (!groupId) return setError("Pick a vehicle first.");
     if (!(parseNum(primaryValue) > 0)) {
       return setError("Enter a cost, liters or distance for this fill-up.");
     }
@@ -296,6 +316,20 @@ export function AddEntrySheet({ entryId, onClose }) {
     <Sheet
       title={editing ? "Edit fill-up" : "Add a fill-up"}
       onClose={onClose}
+      banner={
+        group ? (
+          <div className="sheet-banner">
+            <span className="sheet-banner__label">{bannerLabel}</span>
+            <span
+              className={
+                "sheet-banner__amount " + (isOwned ? "pos" : "neg")
+              }
+            >
+              {formatMoney(bannerAmount)}
+            </span>
+          </div>
+        ) : null
+      }
       footer={
         <>
           <button className="cta-secondary" type="button" onClick={onClose}>
@@ -316,6 +350,7 @@ export function AddEntrySheet({ entryId, onClose }) {
         <p className="muted">Add a car first, then log a fill-up.</p>
       ) : (
         <div className="field-grid">
+          <div className="form-section-head">Vehicle</div>
           {/* Group picker */}
           <Field label="Which car / carpool?">
             <div className="chip-wrap">
@@ -334,6 +369,7 @@ export function AddEntrySheet({ entryId, onClose }) {
             </div>
           </Field>
 
+          <div className="form-section-head">Fuel</div>
           {/* Primary fuel input */}
           <Field label="What do you know?">
             <Segment
@@ -404,6 +440,7 @@ export function AddEntrySheet({ entryId, onClose }) {
             />
           </div>
 
+          <div className="form-section-head">Split</div>
           {/* Split method */}
           {group && (
             <Field label="How to split" hint={SPLIT_METHOD_HINTS[splitMethod]}>
@@ -454,6 +491,7 @@ export function AddEntrySheet({ entryId, onClose }) {
             </div>
           )}
 
+          <div className="form-section-head">Passengers</div>
           {/* Passengers */}
           {group && (
             <Field
@@ -461,7 +499,7 @@ export function AddEntrySheet({ entryId, onClose }) {
               hint={
                 isOwned
                   ? "Leave empty for a personal fill-up. Your own driving is never billed."
-                  : "Include yourself and everyone riding — just like the driver would."
+                  : "Include yourself and everyone riding - just like the driver would."
               }
             >
               <div className="chip-wrap">
@@ -553,7 +591,7 @@ export function AddEntrySheet({ entryId, onClose }) {
             <div className="pax-dist-list">
               {isDriverComp && (
                 <div className="field-hint" style={{ marginTop: 0 }}>
-                  Billable to riders: {formatMoney(driverCompBase(previewEntry))} (fuel
+                  Billable to passengers: {formatMoney(driverCompBase(previewEntry))} (fuel
                   + tolls + parking + {parseNum(maintenancePct) || 0}% maintenance)
                 </div>
               )}
@@ -573,14 +611,11 @@ export function AddEntrySheet({ entryId, onClose }) {
             </div>
           )}
 
+          <div className="form-section-head">Details</div>
           {/* Date + title */}
           <div className="field-inline">
             <Field label="Date">
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
+              <DatePicker value={date} onChange={setDate} />
             </Field>
             <Field label="Title (optional)">
               <input

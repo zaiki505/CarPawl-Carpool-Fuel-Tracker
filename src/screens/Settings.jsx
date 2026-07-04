@@ -8,11 +8,19 @@ import {
   removePerson,
   restorePerson,
   restoreGroup,
+  clearPerson,
+  clearGroup,
+  clearAllData,
+  permanentlyDeleteGroup,
+  permanentlyDeletePerson,
 } from "../db/actions.js";
 import { exportToFile, readBackupFile, restoreFromBackup } from "../lib/backup.js";
 import { getTheme, toggleTheme } from "../lib/theme.js";
 import { Segment, Field } from "../components/ui/Primitives.jsx";
+import { Select } from "../components/ui/Select.jsx";
 import { SPLIT_METHOD_OPTIONS, SPLIT_METHOD_HINTS } from "../lib/splitMethods.js";
+import { CURRENCIES } from "../lib/currencies.js";
+import { DATE_FORMATS, formatDate } from "../lib/format.js";
 import { CyberCat } from "../components/brand/CyberCat.jsx";
 import {
   Plus,
@@ -25,10 +33,10 @@ import {
   Upload,
   Car,
   User,
+  Trash2,
 } from "../components/ui/Icons.jsx";
 
-/* Settings (§7.6): appearance, fuel/format prefs (MYR + DD-MM-YYYY fixed this
-   build), default fuel price, the global people list, archived items with
+/* Settings: appearance, fuel/format prefs, default fuel price, the global people list, archived items with
    restore, JSON backup/restore, and the CyberCat easter egg. */
 export function Settings() {
   const settings = useSettings();
@@ -48,8 +56,10 @@ export function Settings() {
   if (price === "") setPrice(String(settings.defaultFuelPricePerLiter));
   if (maint === "") setMaint(String(settings.defaultMaintenancePct ?? 10));
 
-  const archivedPeople = allPeople.filter((p) => p.isArchived);
-  const archivedGroups = allGroups.filter((g) => g.isArchived);
+  const archivedPeople = allPeople.filter((p) => p.isArchived && !p.cleared);
+  const archivedGroups = allGroups.filter((g) => g.isArchived && !g.cleared);
+  const clearedPeople = allPeople.filter((p) => p.cleared);
+  const clearedGroups = allGroups.filter((g) => g.cleared);
 
   function onTheme(next) {
     setTheme(next);
@@ -58,7 +68,11 @@ export function Settings() {
 
   async function savePrice() {
     const v = Number(price);
-    if (!(v > 0)) return toast("Enter a valid fuel price", "error");
+    if (String(price).trim() === "" || !(v > 0)) {
+      toast("Fuel price can't be empty - kept your previous value", "error");
+      setPrice(String(settings.defaultFuelPricePerLiter));
+      return;
+    }
     await updateSettings({ defaultFuelPricePerLiter: v });
     toast("Default fuel price saved");
   }
@@ -70,9 +84,25 @@ export function Settings() {
 
   async function saveMaint() {
     const v = Number(maint);
-    if (!(v >= 0)) return toast("Enter a valid %", "error");
+    if (String(maint).trim() === "" || !(v >= 0)) {
+      toast("Markup can't be empty - kept your previous value", "error");
+      setMaint(String(settings.defaultMaintenancePct ?? 10));
+      return;
+    }
     await updateSettings({ defaultMaintenancePct: v });
     toast("Maintenance markup saved");
+  }
+
+  async function saveCurrency(code) {
+    const c = CURRENCIES.find((x) => x.code === code);
+    if (!c) return;
+    await updateSettings({ currency: c.code, currencySymbol: c.symbol });
+    toast(`Currency set to ${c.code}`);
+  }
+
+  async function saveDateFormat(fmt) {
+    await updateSettings({ dateFormat: fmt });
+    toast("Date format updated");
   }
 
   async function addNewPerson() {
@@ -97,6 +127,75 @@ export function Settings() {
     if (!ok) return;
     const res = await removePerson(p.id);
     toast(res === "archived" ? `${p.name} archived` : `${p.name} removed`);
+  }
+
+  async function onClearArchivedGroup(g) {
+    const ok = await askConfirm({
+      title: `Clear ${g.name} from the list?`,
+      body: "It'll disappear from Archived for good. Its past fill-ups and all your totals stay exactly as they are - only a tiny name record is kept so history still reads correctly.",
+      confirmLabel: "Clear from list",
+      danger: true,
+    });
+    if (!ok) return;
+    await clearGroup(g.id);
+    toast(`${g.name} cleared`);
+  }
+
+  async function onClearArchivedPerson(p) {
+    const ok = await askConfirm({
+      title: `Clear ${p.name} from the list?`,
+      body: "They'll disappear from Archived for good. Their past fill-ups and all your totals stay exactly as they are - only a tiny name record is kept so history still reads correctly.",
+      confirmLabel: "Clear from list",
+      danger: true,
+    });
+    if (!ok) return;
+    await clearPerson(p.id);
+    toast(`${p.name} cleared`);
+  }
+
+  async function onPermaDeleteGroup(g) {
+    const ok = await askConfirm({
+      title: `Delete ${g.name} forever?`,
+      body: "This removes it AND every fill-up and payment under it, permanently. Historical totals will change. This cannot be undone.",
+      confirmLabel: "Delete forever",
+      danger: true,
+    });
+    if (!ok) return;
+    await permanentlyDeleteGroup(g.id);
+    toast(`${g.name} deleted permanently`);
+  }
+
+  async function onPermaDeletePerson(p) {
+    const ok = await askConfirm({
+      title: `Delete ${p.name} forever?`,
+      body: "This removes them from every fill-up, deletes their payments, and permanently deletes any carpool they own (with its fill-ups). Historical totals will change. This cannot be undone.",
+      confirmLabel: "Delete forever",
+      danger: true,
+    });
+    if (!ok) return;
+    await permanentlyDeletePerson(p.id);
+    toast(`${p.name} deleted permanently`);
+  }
+
+  async function onClearAll() {
+    const first = await askConfirm({
+      title: "Erase everything on this device?",
+      body: "This permanently deletes ALL your cars, carpools, people, fill-ups and payments. Export a JSON backup first if there's any chance you'll want it back.",
+      confirmLabel: "Continue",
+      cancelLabel: "Keep my data",
+      danger: true,
+    });
+    if (!first) return;
+    const second = await askConfirm({
+      title: "Are you absolutely sure?",
+      body: "There is no undo. The moment you confirm, every last fill-up and payment is gone.",
+      confirmLabel: "Yes, delete everything",
+      cancelLabel: "No, stop",
+      danger: true,
+    });
+    if (!second) return;
+    await clearAllData();
+    toast("All data cleared. Starting fresh.");
   }
 
   async function onExport() {
@@ -187,15 +286,29 @@ export function Settings() {
               </button>
             </div>
           </Field>
-          <div className="fixed-fmt">
-            <span className="muted">Currency</span>
-            <strong>MYR (RM)</strong>
-            <span className="muted">Date format</span>
-            <strong>DD-MM-YYYY</strong>
+          <div className="field-inline">
+            <Field label="Currency">
+              <Select
+                value={settings.currency || "MYR"}
+                onChange={saveCurrency}
+                options={CURRENCIES.map((c) => ({
+                  value: c.code,
+                  label: `${c.symbol} · ${c.code}`,
+                }))}
+              />
+            </Field>
+            <Field label="Date format">
+              <Select
+                value={settings.dateFormat || "DD-MM-YYYY"}
+                onChange={saveDateFormat}
+                options={DATE_FORMATS.map((f) => ({ value: f, label: f }))}
+              />
+            </Field>
           </div>
           <p className="field-hint">
-            Currency and date format are fixed in this build. Want them
-            configurable? Let me know and I'll add it.
+            Amounts show as{" "}
+            <strong>{settings.currencySymbol || "RM"}12.50</strong>, dates as{" "}
+            <strong>{formatDate("2026-07-04")}</strong>.
           </p>
         </div>
       </section>
@@ -243,27 +356,34 @@ export function Settings() {
           People
         </h2>
         <div className="detail-panel">
-          <div className="field-inline" style={{ gridTemplateColumns: "1fr auto" }}>
-            <input
-              type="text"
-              placeholder="Add someone…"
-              value={newPerson}
-              onChange={(e) => setNewPerson(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addNewPerson();
-                }
-              }}
-            />
-            <button className="action-btn" type="button" onClick={addNewPerson}>
-              <Plus size={15} /> Add
-            </button>
-          </div>
+          <Field label="Add a person">
+            <div className="add-person-row">
+              <input
+                type="text"
+                placeholder="Their name, e.g. Alex"
+                value={newPerson}
+                onChange={(e) => setNewPerson(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addNewPerson();
+                  }
+                }}
+              />
+              <button
+                className="cta-primary"
+                type="button"
+                onClick={addNewPerson}
+                disabled={!newPerson.trim()}
+              >
+                <Plus size={16} /> Add
+              </button>
+            </div>
+          </Field>
 
           {activePeople.length === 0 ? (
             <p className="field-hint" style={{ marginTop: "0.8rem" }}>
-              No people yet. Add carpool riders here, or on the fly when logging a
+              No people yet. Add carpool passengers here, or on the fly when logging a
               fill-up.
             </p>
           ) : (
@@ -282,27 +402,44 @@ export function Settings() {
       </section>
 
       {/* Archived */}
-      {(archivedGroups.length > 0 || archivedPeople.length > 0) && (
-        <section className="section-block">
-          <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
-            Archived
-          </h2>
-          <div className="detail-panel people-list">
-            {archivedGroups.map((g) => (
+      <section className="section-block">
+        <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
+          Archived
+        </h2>
+        {archivedGroups.length === 0 && archivedPeople.length === 0 ? (
+          <div className="detail-panel">
+            <p className="field-hint" style={{ margin: 0, textAlign: "center" }}>
+              Nothing archived yet. Cars and people you archive land here, ready to
+              restore.
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="detail-panel people-list">
+              {archivedGroups.map((g) => (
               <div className="people-row" key={g.id}>
                 <span className="people-row__name">
                   <Car size={15} /> {g.name}
                 </span>
-                <button
-                  className="mini-btn"
-                  type="button"
-                  onClick={async () => {
-                    await restoreGroup(g.id);
-                    toast(`${g.name} restored`);
-                  }}
-                >
-                  <ArchiveRestore size={13} /> Restore
-                </button>
+                <div className="people-row__actions">
+                  <button
+                    className="mini-btn"
+                    type="button"
+                    onClick={async () => {
+                      await restoreGroup(g.id);
+                      toast(`${g.name} restored`);
+                    }}
+                  >
+                    <ArchiveRestore size={13} /> Restore
+                  </button>
+                  <button
+                    className="mini-btn mini-btn--danger"
+                    type="button"
+                    onClick={() => onClearArchivedGroup(g)}
+                  >
+                    <Trash2 size={13} /> Clear
+                  </button>
+                </div>
               </div>
             ))}
             {archivedPeople.map((p) => (
@@ -310,21 +447,34 @@ export function Settings() {
                 <span className="people-row__name">
                   <User size={15} /> {p.name}
                 </span>
-                <button
-                  className="mini-btn"
-                  type="button"
-                  onClick={async () => {
-                    await restorePerson(p.id);
-                    toast(`${p.name} restored`);
-                  }}
-                >
-                  <ArchiveRestore size={13} /> Restore
-                </button>
+                <div className="people-row__actions">
+                  <button
+                    className="mini-btn"
+                    type="button"
+                    onClick={async () => {
+                      await restorePerson(p.id);
+                      toast(`${p.name} restored`);
+                    }}
+                  >
+                    <ArchiveRestore size={13} /> Restore
+                  </button>
+                  <button
+                    className="mini-btn mini-btn--danger"
+                    type="button"
+                    onClick={() => onClearArchivedPerson(p)}
+                  >
+                    <Trash2 size={13} /> Clear
+                  </button>
+                </div>
               </div>
             ))}
-          </div>
-        </section>
-      )}
+            </div>
+            <p className="field-hint" style={{ textAlign: "center", marginTop: "0.4rem" }}>
+              “Clear” removes an item from this list for good but keeps history intact.
+            </p>
+          </>
+        )}
+      </section>
 
       {/* Backup & restore */}
       <section className="section-block">
@@ -336,7 +486,7 @@ export function Settings() {
             Everything lives on this device. Export a JSON backup regularly and
             keep it somewhere safe.
           </p>
-          <div className="btn-row">
+          <div className="btn-row btn-row--center">
             <button className="cta-primary" type="button" onClick={onExport}>
               <Download size={16} /> Export JSON
             </button>
@@ -355,10 +505,71 @@ export function Settings() {
               onChange={onImportFile}
             />
           </div>
-          <p className="field-hint">
+          <p className="field-hint" style={{ textAlign: "center" }}>
             Restoring a backup replaces everything currently on this device.
             Google Drive backup is planned as a later add-on.
           </p>
+        </div>
+      </section>
+
+      {/* Danger zone: permanent deletes + wipe everything */}
+      <section className="section-block">
+        <h2 className="section-block__title" style={{ marginBottom: "0.6rem", color: "#ff6b81" }}>
+          Danger zone
+        </h2>
+
+        {(clearedGroups.length > 0 || clearedPeople.length > 0) && (
+          <div className="detail-panel" style={{ marginBottom: "0.8rem" }}>
+            <p className="field-hint" style={{ marginTop: 0 }}>
+              Cleared items. Deleting permanently also removes their fill-ups /
+              payments and changes historical totals.
+            </p>
+            <div className="people-list">
+              {clearedGroups.map((g) => (
+                <div className="people-row" key={g.id}>
+                  <span className="people-row__name">
+                    <Car size={15} /> {g.name}
+                  </span>
+                  <button
+                    className="mini-btn mini-btn--danger"
+                    type="button"
+                    onClick={() => onPermaDeleteGroup(g)}
+                  >
+                    <Trash2 size={13} /> Delete forever
+                  </button>
+                </div>
+              ))}
+              {clearedPeople.map((p) => (
+                <div className="people-row" key={p.id}>
+                  <span className="people-row__name">
+                    <User size={15} /> {p.name}
+                  </span>
+                  <button
+                    className="mini-btn mini-btn--danger"
+                    type="button"
+                    onClick={() => onPermaDeletePerson(p)}
+                  >
+                    <Trash2 size={13} /> Delete forever
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="detail-panel">
+          <p className="field-hint" style={{ marginTop: 0 }}>
+            Permanently erase every car, carpool, person, fill-up and payment on
+            this device. Export a backup first - this cannot be undone.
+          </p>
+          <button
+            className="action-btn btn-block btn-danger"
+            type="button"
+            onClick={onClearAll}
+            style={{ marginTop: "0.8rem" }}
+          >
+            <Trash2 size={16} /> Clear all data
+          </button>
         </div>
       </section>
 

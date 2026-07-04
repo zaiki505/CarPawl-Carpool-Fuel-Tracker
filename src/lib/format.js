@@ -1,22 +1,34 @@
-/* Display formatting. Currency + date format are fixed for this build:
-   MYR (RM prefix) and DD-MM-YYYY (build spec §7.6 / §11). Rounding happens
-   here, never in the calc engine. */
+/* Display formatting. Currency symbol + date format are runtime-configurable
+   (Settings). `setFormatConfig` is called from the app shell so the pure
+   formatters below can stay synchronous. Rounding happens here, NEVER in calc. */
 
-export const CURRENCY_PREFIX = "RM";
+let _symbol = "RM";
+let _dateFormat = "DD-MM-YYYY";
 
-/** "RM30.00" - money to 2dp with the RM prefix. */
+/** Push user's chosen currency symbol + date format into the formatters. */
+export function setFormatConfig(settings) {
+  if (!settings) return;
+  if (settings.currencySymbol) _symbol = settings.currencySymbol;
+  if (settings.dateFormat) _dateFormat = settings.dateFormat;
+}
+
+export function getCurrencySymbol() {
+  return _symbol;
+}
+
+/** "RM30.00" - money to 2dp with the configured currency symbol. */
 export function formatMoney(n) {
   const v = Number(n) || 0;
   const sign = v < 0 ? "-" : "";
-  return `${sign}${CURRENCY_PREFIX}${Math.abs(v).toFixed(2)}`;
+  return `${sign}${_symbol}${Math.abs(v).toFixed(2)}`;
 }
 
-/** Money without forcing 2dp of noise for whole numbers, e.g. "RM5". */
+/** Money without forcing 2dp of noise for whole numbers, example: "RM5". */
 export function formatMoneyShort(n) {
   const v = Number(n) || 0;
   const abs = Math.abs(v);
   const body = Number.isInteger(abs) ? String(abs) : abs.toFixed(2);
-  return `${v < 0 ? "-" : ""}${CURRENCY_PREFIX}${body}`;
+  return `${v < 0 ? "-" : ""}${_symbol}${body}`;
 }
 
 export function formatLiters(n) {
@@ -32,7 +44,9 @@ export function formatKmpl(n) {
   return `${(Number(n) || 0).toFixed(1)} km/L`;
 }
 
-/** ISO 'YYYY-MM-DD' (or full ISO) -> 'DD-MM-YYYY'. */
+export const DATE_FORMATS = ["DD-MM-YYYY", "MM-DD-YYYY", "YYYY-MM-DD", "DD/MM/YYYY"];
+
+/** ISO date -> the user's configured date format. */
 export function formatDate(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr);
@@ -40,7 +54,17 @@ export function formatDate(dateStr) {
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const yyyy = d.getFullYear();
-  return `${dd}-${mm}-${yyyy}`;
+  switch (_dateFormat) {
+    case "MM-DD-YYYY":
+      return `${mm}-${dd}-${yyyy}`;
+    case "YYYY-MM-DD":
+      return `${yyyy}-${mm}-${dd}`;
+    case "DD/MM/YYYY":
+      return `${dd}/${mm}/${yyyy}`;
+    case "DD-MM-YYYY":
+    default:
+      return `${dd}-${mm}-${yyyy}`;
+  }
 }
 
 /** Short, friendly date like "3 Jul" for dense lists. */

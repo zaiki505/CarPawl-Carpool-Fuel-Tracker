@@ -1,6 +1,7 @@
 import { useApp } from "./AppContext.jsx";
-import { removeEntry, removePayment } from "../db/actions.js";
-import { formatMoney } from "../lib/format.js";
+import { removeEntry, removePayment, createPayment, clearPayments } from "../db/actions.js";
+import { formatMoney, todayISODate } from "../lib/format.js";
+import { confettiBurst } from "../lib/confetti.js";
 
 /* Shared Pay / Edit / Delete handlers for fill-ups and payments, so every
    screen that renders an EntryCard (Dashboard, History, Group Detail) behaves
@@ -26,6 +27,29 @@ export function useEntryActions() {
     toast("Payment deleted");
   };
 
+  // Swipe-to-settle: record a payment for the full outstanding in one go, then
+  // celebrate (the balance just hit zero).
+  const onQuickSettle = async (entry, who, amount) => {
+    if (!(amount > 0.005)) return;
+    await createPayment({
+      entryId: entry.id,
+      who,
+      amount,
+      date: todayISODate(),
+      note: "settled",
+    });
+    toast("Settled! 🎉");
+    confettiBurst();
+  };
+
+  // Swipe a passenger row right and tap the X: wipe all their payments on this
+  // fill-up in one shot. The X is the confirm, so no extra modal here.
+  const onClearPayments = async (entry, who, paymentIds) => {
+    if (!paymentIds?.length) return;
+    await clearPayments(paymentIds);
+    toast("Payments cleared");
+  };
+
   const onEditEntry = (entry) => openSheet({ type: "addEntry", entryId: entry.id });
 
   const onDeleteEntry = async (entry) => {
@@ -44,6 +68,8 @@ export function useEntryActions() {
     onRecordPayment,
     onEditPayment,
     onDeletePayment,
+    onQuickSettle,
+    onClearPayments,
     onEditEntry,
     onDeleteEntry,
   };

@@ -10,7 +10,6 @@ import {
   groupBalances,
   totalOwedToYou,
   totalYouOwe,
-  thisMonthSpend,
   thisMonthConsumption,
   efficiencyTrend,
   driverCompBase,
@@ -21,8 +20,8 @@ import { ME, person } from "./identity.js";
 const alex = person("alex");
 const sam = person("sam");
 
-/* --------------------------- 4.1 fuel math --------------------------- */
-describe("4.1 deriveEntryTotals", () => {
+/* --------------------------- Fuel math --------------------------- */
+describe("deriveEntryTotals", () => {
   it("cost primary derives liters then distance", () => {
     const r = deriveEntryTotals({
       primaryField: "cost",
@@ -100,7 +99,7 @@ describe("4.1 deriveEntryTotals", () => {
   });
 });
 
-/* ---------------------- split methods ---------------------- */
+/* ---------------------- Split methods ---------------------- */
 describe("split methods", () => {
   const passengers = [
     { who: alex, distanceAssigned: 300 },
@@ -113,7 +112,7 @@ describe("split methods", () => {
     expect(share(e, sam)).toBe(30);
   });
 
-  it("equal splits fuel cost evenly among riders (owner not charged)", () => {
+  it("equal splits fuel cost evenly among riders", () => {
     const e = {
       id: "e",
       splitMethod: "equal",
@@ -150,8 +149,8 @@ describe("split methods", () => {
   });
 });
 
-/* ---------------------- 4.2 / 4.3 share + outstanding ---------------------- */
-describe("4.2 share & 4.3 outstanding", () => {
+/* ---------------------- share + outstanding ---------------------- */
+describe("share & outstanding", () => {
   const entry = {
     id: "e1",
     totalCost: 60,
@@ -203,8 +202,8 @@ describe("4.2 share & 4.3 outstanding", () => {
   });
 });
 
-/* ------------------------ 4.4 balances ------------------------ */
-describe("4.4 balances (owed & credit never netted)", () => {
+/* ------------------------ Balances ------------------------ */
+describe("balances (owed & credit never netted)", () => {
   const entries = [
     {
       id: "e1",
@@ -238,8 +237,8 @@ describe("4.4 balances (owed & credit never netted)", () => {
   });
 });
 
-/* ------------------------ 4.5 dashboard totals ------------------------ */
-describe("4.5 dashboard totals", () => {
+/* ------------------------ Dashboard totals ------------------------ */
+describe("dashboard totals", () => {
   const ownedGroups = [{ id: "g1", ownerType: "me" }];
   const nonOwnedGroups = [{ id: "g2", ownerType: "person", ownerPersonId: "d" }];
   const entriesByGroup = {
@@ -282,46 +281,8 @@ describe("4.5 dashboard totals", () => {
   });
 });
 
-/* ------------------------ 4.6 month spend ------------------------ */
-describe("4.6 this month's spend (cash flow, mixed date fields)", () => {
-  const ref = new Date("2026-07-15T00:00:00");
-  const ownedGroups = [{ id: "g1" }];
-  const nonOwnedGroups = [{ id: "g2" }];
-  const entriesByGroup = {
-    g1: [
-      // this month fuel
-      { id: "e1", groupId: "g1", date: "2026-07-03", totalCost: 100, passengers: [{ who: alex, distanceAssigned: 100 }], totalDistance: 100 },
-      // last month fuel (excluded)
-      { id: "e0", groupId: "g1", date: "2026-06-20", totalCost: 80, passengers: [], totalDistance: 100 },
-    ],
-    g2: [
-      { id: "e2", groupId: "g2", date: "2026-06-28", totalCost: 60, passengers: [{ who: ME, distanceAssigned: 100 }], totalDistance: 100 },
-    ],
-  };
-  const payments = [
-    // alex pays me this month for e1 -> reduces spend
-    { entryId: "e1", who: alex, amount: 40, date: "2026-07-10" },
-    // I pay toward my share on e2 this month (entry was last month) -> adds spend
-    { entryId: "e2", who: ME, amount: 25, date: "2026-07-05" },
-    // a payment last month -> excluded
-    { entryId: "e1", who: alex, amount: 10, date: "2026-06-30" },
-  ];
-
-  it("buckets fuel by entry date and payments by payment date", () => {
-    const spend = thisMonthSpend({
-      ownedGroups,
-      nonOwnedGroups,
-      entriesByGroup,
-      payments,
-      ref,
-    });
-    // 100 (fuel e1) - 40 (alex paid) + 25 (my share on non-owned) = 85
-    expect(spend).toBe(85);
-  });
-});
-
-/* ------------------------ 4.7 consumption ------------------------ */
-describe("4.7 month consumption (owned, by entry date)", () => {
+/* ------------------------ This month consumption ------------------------ */
+describe("This month consumption (owned, by entry date)", () => {
   const ref = new Date("2026-07-15T00:00:00");
   const ownedGroups = [{ id: "g1" }];
   const entriesByGroup = {
@@ -338,8 +299,8 @@ describe("4.7 month consumption (owned, by entry date)", () => {
   });
 });
 
-/* ------------------------ 4.8 efficiency trend ------------------------ */
-describe("4.8 efficiency trend", () => {
+/* ------------------------ This month efficiency trend ------------------------ */
+describe("This month efficiency trend", () => {
   const ref = new Date("2026-07-30T00:00:00");
   const entries = [
     { id: "e1", date: "2026-07-20", hasMeasuredEfficiency: true, totalDistance: 540, totalLiters: 50 },

@@ -1,12 +1,10 @@
 import Dexie from "dexie";
 
 /* CarPawl local database (IndexedDB via Dexie).
-   Single-user, on-device, no backend. See build spec §3 for the data model.
 
-   Notes on shape:
+   Notes:
    - `passengers` (on Entry) and `who` (on Payment) are stored as embedded
-     objects/arrays, not separate tables - they're always read with their parent
-     and never queried independently.
+     objects/arrays. They're always read with their parent and never queried independently.
    - `who` is `{ type: 'me' }` or `{ type: 'person', personId }`. 'me' is a fixed
      built-in identity, never a Person row.
    - Deleting a Group/Person that has history archives it instead (see actions).
@@ -15,7 +13,7 @@ import Dexie from "dexie";
 export const db = new Dexie("carpawl");
 
 db.version(1).stores({
-  // Only fields we actually query/sort on are indexed.
+  // Only fields actually query/sort on are indexed.
   people: "id, isArchived, createdAt",
   groups: "id, ownerType, ownerPersonId, isArchived, createdAt",
   entries: "id, groupId, date, createdAt",
@@ -27,7 +25,7 @@ db.version(1).stores({
 export const SETTINGS_ID = "app";
 
 export const DEFAULTS = Object.freeze({
-  defaultFuelPricePerLiter: 2.05, // MYR/L (RON95 ballpark; user-editable)
+  defaultFuelPricePerLiter: 1.99, // MYR/L (RON95 subsidy ballpark; user-editable)
   defaultKmPerLiter: 12, // used as the suggested value when creating a group
   currency: "MYR",
   currencySymbol: "RM",
@@ -61,7 +59,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
 
 /**
  * Get-or-create the settings row. This WRITES on first run, so it must only be
- * called from normal contexts (app boot, action handlers) — NEVER from inside a
+ * called from normal contexts (app boot, action handlers) - NEVER from inside a
  * Dexie useLiveQuery reader, where writes throw a read-only transaction error.
  * Reactive reads should use `readSettings()` (pure) instead.
  */
@@ -74,8 +72,7 @@ export async function ensureSettings() {
   return s;
 }
 
-/** Pure read: the settings row, or defaults if it doesn't exist yet. No writes,
- *  safe inside live queries. */
+/** Pure read: the settings row, or defaults if it doesn't exist yet. */
 export async function readSettings() {
   const s = await db.settings.get(SETTINGS_ID);
   return s || { ...DEFAULT_SETTINGS };

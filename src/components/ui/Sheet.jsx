@@ -4,7 +4,7 @@ import { X } from "./Icons.jsx";
 /* Bottom sheet - the §6 slide-up panel. Glass panel treatment, enters with the
    sheetUp (blur-slide) keyframe. Tapping the scrim or the close button, or
    pressing Escape, dismisses it. */
-export function Sheet({ title, onClose, children, footer }) {
+export function Sheet({ title, onClose, children, footer, banner }) {
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === "Escape") onClose();
@@ -34,6 +34,7 @@ export function Sheet({ title, onClose, children, footer }) {
             <X size={18} />
           </button>
         </div>
+        {banner && <div className="sheet__banner">{banner}</div>}
         <div className="sheet__body">{children}</div>
         {footer && <div className="sheet__foot">{footer}</div>}
       </div>

@@ -5,8 +5,8 @@ import { personName } from "../lib/names.js";
 import { Car, ChevronRight } from "./ui/Icons.jsx";
 
 /* A group summary row for the Dashboard/Groups lists. Owned groups surface what
-   others owe you; carpools surface what you owe the driver. Owed and credit are
-   shown separately, never netted (§4.4). */
+   others owe user; carpools surface what user owe the driver. Owed and credit are
+   shown separately, never netted. */
 export function GroupCard({ group, entries, payments, peopleMap, onOpen }) {
   const list = entries || [];
   const isOwned = group.ownerType === "me";
@@ -14,7 +14,7 @@ export function GroupCard({ group, entries, payments, peopleMap, onOpen }) {
   let amount = 0;
   let credit = 0;
   if (isOwned) {
-    for (const row of groupBalances(list, payments)) {
+    for (const row of groupBalances(list, payments, { excludeMe: true })) {
       amount += row.owed;
       credit += row.credit;
     }
@@ -23,11 +23,16 @@ export function GroupCard({ group, entries, payments, peopleMap, onOpen }) {
     amount = b.owed;
     credit = b.credit;
   }
-  const label = amount > 0 ? (isOwned ? "owed to you" : "you owe") : "settled";
+  const label = amount > 0 ? (isOwned ? "to collect" : "to pay") : "settled";
 
   return (
     <button className="list-row" type="button" onClick={() => onOpen(group.id)}>
-      <span className="list-row__icon">
+      <span
+        className={
+          "list-row__icon " +
+          (isOwned ? "list-row__icon--vehicle" : "list-row__icon--carpool")
+        }
+      >
         <Car size={20} />
       </span>
       <div className="list-row__body">

@@ -27,6 +27,7 @@ export {
   Archive,
   ArchiveRestore,
   TrendingUp,
+  TrendingDown,
   CircleDollarSign,
   Gauge,
   MapPin,

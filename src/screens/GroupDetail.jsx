@@ -8,10 +8,10 @@ import {
 import { useApp } from "../app/AppContext.jsx";
 import { useEntryActions } from "../app/useEntryActions.js";
 import { updateGroup, removeGroup } from "../db/actions.js";
-import { groupBalances, outstanding } from "../lib/calc.js";
-import { formatMoney, formatMoneyShort, formatKmpl } from "../lib/format.js";
+import { groupBalances, outstanding, share } from "../lib/calc.js";
+import { formatMoney, formatMoneyShort, formatKmpl, formatDate } from "../lib/format.js";
 import { whoName, personName } from "../lib/names.js";
-import { whoEquals } from "../lib/identity.js";
+import { whoEquals, ME } from "../lib/identity.js";
 import { buildWhatsAppText, shareText } from "../lib/exportText.js";
 import { EntryCard } from "../components/EntryCard.jsx";
 import { ActionMenu } from "../components/ui/ActionMenu.jsx";
@@ -24,9 +24,6 @@ import {
   Archive,
   Fuel,
   User,
-  Wallet,
-  Receipt,
-  X,
 } from "../components/ui/Icons.jsx";
 
 export function GroupDetail({ groupId }) {
@@ -40,26 +37,35 @@ export function GroupDetail({ groupId }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [kmpl, setKmpl] = useState("");
-  // Balance-row tap: first-level menu, then a "pick a fill-up to pay" menu,
-  // plus a filter that focuses the fill-up list on one person.
-  const [menuWho, setMenuWho] = useState(null);
+  // Tapping a balance records a payment straight away; if they owe on several
+  // fill-ups, this holds the "which fill-up?" picker.
   const [payPickerWho, setPayPickerWho] = useState(null);
-  const [focusWho, setFocusWho] = useState(null);
 
   if (!group || !peopleMap) return <div className="app-shell" />;
 
   const isOwned = group.ownerType === "me";
-  const balances = groupBalances(entries, payments).filter(
+  const balances = groupBalances(entries, payments, { excludeMe: isOwned }).filter(
     (b) => b.owed > 0 || b.credit > 0
   );
+  // Your own share across this vehicle's fill-ups (billed, covered by you), shown
+  // for reference, never collectable.
+  const meBilled = isOwned
+    ? entries.reduce((sum, e) => sum + share(e, ME), 0)
+    : 0;
 
-  // Entries a given person owes on (for the pay-picker).
-  const outstandingEntriesFor = (who) =>
-    entries.filter((e) => outstanding(e, who, payments) > 0.005);
+  // Fill-ups a person can have a payment applied to: those they still owe on,
+  // or (if they only hold credit) any fill-up they're on.
+  const payableEntriesFor = (who) => {
+    const owing = entries.filter((e) => outstanding(e, who, payments) > 0.005);
+    if (owing.length) return owing;
+    return entries.filter((e) => (e.passengers || []).some((p) => whoEquals(p.who, who)));
+  };
 
-  const shownEntries = focusWho
-    ? entries.filter((e) => (e.passengers || []).some((p) => whoEquals(p.who, focusWho)))
-    : entries;
+  function recordPaymentFor(who) {
+    const payable = payableEntriesFor(who);
+    if (payable.length === 1) openSheet({ type: "payment", entry: payable[0], who });
+    else if (payable.length > 1) setPayPickerWho(who);
+  }
 
   function startEdit() {
     setName(group.name);
@@ -156,7 +162,7 @@ export function GroupDetail({ groupId }) {
       </div>
 
       {/* Balances (owed & credit shown separately, never netted) */}
-      {balances.length > 0 && (
+      {(balances.length > 0 || meBilled > 0.005) && (
         <section className="section-block">
           <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
             Balances
@@ -167,14 +173,12 @@ export function GroupDetail({ groupId }) {
                 className="balance-row balance-row--tappable"
                 key={i}
                 type="button"
-                onClick={() => setMenuWho(b.who)}
+                onClick={() => recordPaymentFor(b.who)}
               >
                 <span className="balance-row__name">{whoName(b.who, peopleMap)}</span>
                 <span className="balance-row__vals">
                   {b.owed > 0 && (
-                    <span className={isOwned ? "pos" : "neg"}>
-                      {isOwned ? "owes" : "you owe"} {formatMoney(b.owed)}
-                    </span>
+                    <span className={isOwned ? "pos" : "neg"}>{formatMoney(b.owed)}</span>
                   )}
                   {b.owed > 0 && b.credit > 0 && <span className="faint"> · </span>}
                   {b.credit > 0 && (
@@ -183,9 +187,17 @@ export function GroupDetail({ groupId }) {
                 </span>
               </button>
             ))}
+            {meBilled > 0.005 && (
+              <div className="balance-row balance-row--me">
+                <span className="balance-row__name">You</span>
+                <span className="balance-row__vals faint">
+                  {formatMoney(meBilled)} · your share (billed)
+                </span>
+              </div>
+            )}
           </div>
           <p className="field-hint" style={{ textAlign: "center", marginTop: "0.4rem" }}>
-            Tap a person to record a payment or see their fill-ups.
+            Tap a person to record a payment.
           </p>
           <button className="action-btn btn-block" type="button" onClick={onExport} style={{ marginTop: "0.7rem" }}>
             <Share2 size={16} /> Share balances
@@ -195,31 +207,28 @@ export function GroupDetail({ groupId }) {
 
       {/* Entries */}
       <section className="section-block">
-        <div className="section-block__head">
-          <h2 className="section-block__title">Fill-ups</h2>
-          {focusWho && (
-            <button className="link-btn" type="button" onClick={() => setFocusWho(null)}>
-              <X size={12} /> {whoName(focusWho, peopleMap)}'s only — clear
-            </button>
-          )}
-        </div>
+        <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
+          Fill-ups
+        </h2>
         {entries.length === 0 ? (
           <EmptyState emoji="⛽" title="No fill-ups yet">
             Tap the + button to log this {isOwned ? "car's" : "carpool's"} first
             fuel entry.
           </EmptyState>
-        ) : shownEntries.length === 0 ? (
-          <EmptyState emoji="🔍" title="No matching fill-ups" />
         ) : (
-          shownEntries.map((e) => (
+          entries.map((e) => (
             <EntryCard
               key={e.id}
               entry={e}
               payments={payments}
               peopleMap={peopleMap}
+              ownedByMe={isOwned}
+              fallbackTitle={group.name}
               onRecordPayment={entryActions.onRecordPayment}
               onEditPayment={entryActions.onEditPayment}
               onDeletePayment={entryActions.onDeletePayment}
+              onQuickSettle={entryActions.onQuickSettle}
+              onClearPayments={entryActions.onClearPayments}
               onEdit={entryActions.onEditEntry}
               onDelete={entryActions.onDeleteEntry}
             />
@@ -234,57 +243,27 @@ export function GroupDetail({ groupId }) {
         </button>
       </section>
 
-      {/* Balance-row tap: choose an action */}
-      {menuWho && (
-        <ActionMenu
-          title={whoName(menuWho, peopleMap)}
-          subtitle="What would you like to do?"
-          onClose={() => setMenuWho(null)}
-          items={[
-            {
-              icon: <Wallet size={18} />,
-              label: "Record a payment",
-              sublabel: "settle part or all of what they owe",
-              onClick: () => {
-                const who = menuWho;
-                setMenuWho(null);
-                const owing = outstandingEntriesFor(who);
-                if (owing.length === 1) {
-                  openSheet({ type: "payment", entry: owing[0], who });
-                } else {
-                  setPayPickerWho(who);
-                }
-              },
-            },
-            {
-              icon: <Receipt size={18} />,
-              label: "See their fill-ups",
-              sublabel: "filter the list to their trips",
-              onClick: () => {
-                setFocusWho(menuWho);
-                setMenuWho(null);
-              },
-            },
-          ]}
-        />
-      )}
-
       {/* Pay-picker: which fill-up to apply the payment to */}
       {payPickerWho && (
         <ActionMenu
           title={`Pay for ${whoName(payPickerWho, peopleMap)}`}
           subtitle="Which fill-up is this payment for?"
           onClose={() => setPayPickerWho(null)}
-          items={outstandingEntriesFor(payPickerWho).map((e) => ({
-            icon: <Fuel size={18} />,
-            label: e.title || "Fill-up",
-            sublabel: `owes ${formatMoney(outstanding(e, payPickerWho, payments))}`,
-            onClick: () => {
-              const who = payPickerWho;
-              setPayPickerWho(null);
-              openSheet({ type: "payment", entry: e, who });
-            },
-          }))}
+          items={payableEntriesFor(payPickerWho).map((e) => {
+            const out = outstanding(e, payPickerWho, payments);
+            return {
+              icon: <Fuel size={18} />,
+              label: e.title || group.name,
+              sublabel:
+                `${formatDate(e.date)} · ` +
+                (out > 0.005 ? `owes ${formatMoney(out)}` : "settled, add a credit"),
+              onClick: () => {
+                const who = payPickerWho;
+                setPayPickerWho(null);
+                openSheet({ type: "payment", entry: e, who });
+              },
+            };
+          })}
         />
       )}
     </div>

@@ -9,6 +9,7 @@ import { AddEntrySheet } from "./AddEntrySheet.jsx";
 import { GroupForm } from "./GroupForm.jsx";
 import { useApp } from "../app/AppContext.jsx";
 import { useSettings, usePeopleMap } from "../db/hooks.js";
+import { setFormatConfig } from "../lib/format.js";
 import { Dashboard } from "../screens/Dashboard.jsx";
 import { Groups } from "../screens/Groups.jsx";
 import { GroupDetail } from "../screens/GroupDetail.jsx";
@@ -23,6 +24,10 @@ export function AppFrame() {
   const { tab, detail, sheet, openSheet, closeSheet, goTab } = useApp();
   const settings = useSettings();
   const peopleMap = usePeopleMap();
+
+  // Apply currency/date-format config synchronously before children render, so
+  // every formatted value reflects the user's Settings choices immediately.
+  if (settings) setFormatConfig(settings);
 
   // While settings load, render just the background to avoid a flash.
   if (settings === undefined) return <Background />;
@@ -54,10 +59,18 @@ export function AppFrame() {
     <>
       <Background />
       {screen}
-      <BottomNav onAdd={() => openSheet({ type: "addEntry" })} />
+      <BottomNav
+        onAdd={() =>
+          openSheet({
+            type: "addEntry",
+            // On a vehicle's page, pre-select that vehicle (§16).
+            groupId: detail?.type === "group" ? detail.id : undefined,
+          })
+        }
+      />
 
       {sheet?.type === "createGroup" && (
-        <Sheet title="Add a group" onClose={closeSheet}>
+        <Sheet title="Add a vehicle" onClose={closeSheet}>
           <GroupForm mode="create" onDone={closeSheet} />
         </Sheet>
       )}
@@ -73,7 +86,11 @@ export function AppFrame() {
       )}
 
       {sheet?.type === "addEntry" && (
-        <AddEntrySheet entryId={sheet.entryId} onClose={closeSheet} />
+        <AddEntrySheet
+          entryId={sheet.entryId}
+          preselectGroupId={sheet.groupId}
+          onClose={closeSheet}
+        />
       )}
 
       <ConfirmModal />

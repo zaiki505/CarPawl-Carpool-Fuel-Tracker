@@ -100,8 +100,12 @@ export function useAllData() {
       entriesByGroup[gid].sort((a, b) => new Date(b.date) - new Date(a.date));
     }
     const peopleMap = new Map(people.map((p) => [p.id, p]));
+    const groupOwnedMap = new Map(groups.map((g) => [g.id, g.ownerType === "me"]));
+    const groupMap = new Map(groups.map((g) => [g.id, g]));
     return {
       groups,
+      groupMap,
+      groupOwnedMap,
       activeGroups,
       ownedGroups,
       nonOwnedGroups,

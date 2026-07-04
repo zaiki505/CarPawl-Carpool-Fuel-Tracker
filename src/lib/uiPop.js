@@ -1,6 +1,5 @@
-/* Global "uiPop" click squish - the Zaiki brand fingerprint. On pointerdown we
-   add `.ui-clicked` to the nearest interactive element; on animationend we
-   remove it. Verbatim behaviour from the source portfolio's script.js. */
+/* Global "uiPop" click squish. On pointerdown add `.ui-clicked` to the nearest interactive element; on animationend
+   remove it. */
 
 const POP_SELECTOR =
   "button, a, .list-row, .stat-card, .pick-chip, [data-pop]";

@@ -7,6 +7,7 @@ dist-ssr
 !.env.example
 .DS_Store
 .vite
+zaiki-design-system
 
 # Local scratch / extraction artifacts
 _extracted

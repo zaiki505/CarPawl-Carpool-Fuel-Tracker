@@ -1,9 +1,8 @@
 import { db, SETTINGS_ID, ensureSettings } from "../db/db.js";
 
-/* Manual JSON backup & restore (§9). This is the always-available baseline;
-   Google Drive is a documented later add-on and is intentionally not built in
-   this version. A restore FULLY REPLACES on-device data (no merge) — callers
-   must confirm with the user first (§8). */
+/* Manual JSON backup & restore. This is the always-available baseline;
+   Google Drive is a documented later add-on. A restore FULLY REPLACES on-device data (no merge), 
+   callers must confirm with the user first. */
 
 export const BACKUP_VERSION = 1;
 
@@ -49,7 +48,7 @@ export function validateBackup(obj) {
   const d = obj.data;
   for (const key of ["people", "groups", "entries", "payments"]) {
     if (!Array.isArray(d[key])) {
-      throw new Error(`Backup is missing its "${key}" list — it may be corrupted.`);
+      throw new Error(`Backup is missing its "${key}" list - it may be corrupted.`);
     }
   }
   return obj;
@@ -106,7 +105,7 @@ export async function readBackupFile(file) {
   try {
     obj = JSON.parse(text);
   } catch {
-    throw new Error("Couldn't read that file — it isn't valid JSON.");
+    throw new Error("Couldn't read that file - it isn't valid JSON.");
   }
   return validateBackup(obj);
 }

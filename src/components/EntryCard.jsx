@@ -4,8 +4,9 @@ import {
   outstanding,
   statusOf,
   paymentsFor,
-  entryEfficiency,
+  entryEfficiencyDisplay,
   entryTotalPaid,
+  entryTotalBillable,
   splitMethodOf,
 } from "../lib/calc.js";
 import {
@@ -18,43 +19,93 @@ import {
   formatKmpl,
 } from "../lib/format.js";
 import { whoName } from "../lib/names.js";
-import { splitMethodLabel } from "../lib/splitMethods.js";
+import { whoKey, whoEquals, isMe } from "../lib/identity.js";
+import { splitMethodShort } from "../lib/splitMethods.js";
 import { StatusBadge } from "./ui/Primitives.jsx";
+import { SwipeSettle } from "./ui/SwipeSettle.jsx";
 import { Fuel, ChevronDown, Pencil, Trash2, Wallet } from "./ui/Icons.jsx";
 
-/* One fill-up. Collapsed: date/title + collected/owed + a roll-up status.
-   Expanded: the fuel breakdown, the split method, and each passenger's share /
-   outstanding / status, with per-passenger payment history (edit/delete) and a
-   "record payment" affordance. Used on Dashboard, Group Detail and History. */
+// Roll-up status: text colour for the collected figure in the collapsed row.
+const STATUS_COLOR = {
+  unpaid: "#ff6b81",
+  partial: "var(--tier-intermediate)",
+  paid: "#34d399",
+  credit: "var(--tag-web)",
+};
+
+/* One fill-up.
+   - `ownedByMe`: user own vehicle -> user own "Me" share is shown for reference but never billed/collectible.
+   - `onlyWho`: a Set of whoKeys to show; when set, non-matching passengers are hidden 
+                and the collected/total figures reflect only the selected ones. */
 export function EntryCard({
   entry,
   payments,
   peopleMap,
+  ownedByMe = false,
+  onlyWho = null,
+  fallbackTitle,
   onRecordPayment,
   onEditPayment,
   onDeletePayment,
+  onQuickSettle,
+  onClearPayments,
   onEdit,
   onDelete,
   defaultExpanded = false,
 }) {
   const [open, setOpen] = useState(defaultExpanded);
-  const entryPayments = (payments || []).filter((p) => p.entryId === entry.id);
-  const passengers = entry.passengers || [];
-  const eff = entryEfficiency(entry);
-  const method = splitMethodOf(entry);
+  const [showAllPay, setShowAllPay] = useState(false);
+  const [dissolving, setDissolving] = useState(null); // whoKey mid-dissolve
 
-  const collected = entryTotalPaid(entry, entryPayments);
+  // Thanos-dissolve their payment chips, then wipe the records once the dust
+  // settles so the row doesn't flicker before the animation plays.
+  function clearWithDissolve(who, ids) {
+    setDissolving(whoKey(who));
+    window.setTimeout(() => {
+      onClearPayments(entry, who, ids);
+      setDissolving(null);
+    }, 560);
+  }
+  const entryPayments = (payments || []).filter((p) => p.entryId === entry.id);
+  const allPassengers = entry.passengers || [];
+  const method = splitMethodOf(entry);
+  const effDisp = entryEfficiencyDisplay(entry);
+
+  // Passengers we actually show/count (apply the History filter). In user own
+  // vehicle "Me" share is billed and covered by user: part of the
+  // fill-up total and shows as covered, but it's never a red owed user chase.
+  const passengers = onlyWho
+    ? allPassengers.filter((p) => onlyWho.has(whoKey(p.who)))
+    : allPassengers;
+  const otherPax = passengers.filter((p) => !(ownedByMe && isMe(p.who)));
+  const meShare = passengers
+    .filter((p) => ownedByMe && isMe(p.who))
+    .reduce((sum, p) => sum + share(entry, p.who), 0);
+
+  // Total billed includes user own share; collected counts user share as
+  // already covered (user paid the pump) plus real passenger payments.
+  const billable = passengers.reduce((sum, p) => sum + share(entry, p.who), 0);
+  const collected =
+    otherPax.reduce((sum, p) => sum + paymentsFor(entry, p.who, entryPayments), 0) +
+    meShare;
   const hasPax = passengers.length > 0;
 
-  // roll-up status across passengers (for the collapsed badge)
+  // roll-up status across the collectible (non-Me) passengers
   let rollup = null;
-  if (hasPax) {
-    const statuses = passengers.map((p) => statusOf(entry, p.who, entryPayments));
+  if (otherPax.length) {
+    const statuses = otherPax.map((p) => statusOf(entry, p.who, entryPayments));
     if (statuses.every((s) => s === "paid")) rollup = "paid";
     else if (statuses.some((s) => s === "credit")) rollup = "credit";
     else if (statuses.some((s) => s === "partial" || s === "paid")) rollup = "partial";
     else rollup = "unpaid";
+  } else if (hasPax) {
+    rollup = "paid"; // only user own covered share
   }
+
+  const effText =
+    effDisp.value != null
+      ? (effDisp.estimated ? "~" : "") + formatKmpl(effDisp.value)
+      : null;
 
   return (
     <div className="entry-card">
@@ -65,26 +116,30 @@ export function EntryCard({
         type="button"
         aria-expanded={open}
       >
-        <span className="list-row__icon">
+        <span className="list-row__icon list-row__icon--fillup">
           <Fuel size={20} />
         </span>
         <div className="list-row__body">
-          <div className="list-row__title">{entry.title || "Fill-up"}</div>
+          <div className="list-row__title">
+            {entry.title || fallbackTitle || "Fill-up"}
+          </div>
           <div className="list-row__meta">
-            {formatDate(entry.date)} · {formatLiters(entry.totalLiters)}
-            {eff != null ? ` · ${formatKmpl(eff)}` : ""}
+            {hasPax ? splitMethodShort(method) : "Personal fill-up"}
+            {effText ? ` · ${effText}` : ""}
           </div>
         </div>
         <div className="list-row__trailing">
           {hasPax ? (
             <span className="list-row__amount">
-              {formatMoneyShort(collected)}
-              <span className="faint">/{formatMoneyShort(entry.totalCost)}</span>
+              <span style={{ color: STATUS_COLOR[rollup] }}>
+                {formatMoneyShort(collected)}
+              </span>
+              <span className="faint">/{formatMoneyShort(billable)}</span>
             </span>
           ) : (
             <span className="list-row__amount">{formatMoney(entry.totalCost)}</span>
           )}
-          {rollup && <StatusBadge status={rollup} />}
+          <span className="entry-date">{formatDate(entry.date)}</span>
         </div>
         <ChevronDown
           size={18}
@@ -100,39 +155,57 @@ export function EntryCard({
             <Fact label="Fuel price" value={`${formatMoneyShort(entry.fuelPricePerLiter)}/L`} />
             <Fact
               label="Efficiency"
-              value={eff != null ? formatKmpl(eff) : "—"}
-              hint={eff == null ? "not measured" : "measured"}
+              value={effText || "-"}
+              hint={effDisp.estimated ? "estimate" : "measured"}
             />
           </div>
 
-          {hasPax && (
+          {hasPax && method === "driver_comp" && (
             <div className="split-chip-row">
-              <span className="chip-fact">Split: {splitMethodLabel(method)}</span>
-              {method === "driver_comp" && (
-                <span className="chip-fact">
-                  Tolls {formatMoneyShort(entry.tolls || 0)} · Parking{" "}
-                  {formatMoneyShort(entry.parking || 0)} · +{entry.maintenancePct || 0}%
-                </span>
-              )}
+              <span className="chip-fact">
+                Tolls {formatMoneyShort(entry.tolls || 0)} · Parking{" "}
+                {formatMoneyShort(entry.parking || 0)} · +{entry.maintenancePct || 0}%
+              </span>
             </div>
           )}
 
           {!hasPax ? (
             <p className="faint" style={{ fontSize: "0.8rem", margin: "0.4rem 0 0" }}>
-              Personal fill-up — no passengers to split with.
+              Personal fill-up - no passengers to split with.
             </p>
           ) : (
             <div className="pax-list">
               {passengers.map((p, i) => {
+                const meInOwned = ownedByMe && isMe(p.who);
                 const s = share(entry, p.who);
+                // user own share in user own vehicle: reference only.
+                if (meInOwned) {
+                  return (
+                    <div className="pax-row pax-row--me" key={i}>
+                      <div className="pax-row__top">
+                        <div className="pax-row__main">
+                          <span className="pax-row__name">You</span>
+                          <span className="pax-row__sub">
+                            your share {formatMoney(s)} · covered by you
+                          </span>
+                        </div>
+                        <span className="badge badge--paid">billed</span>
+                      </div>
+                    </div>
+                  );
+                }
                 const paid = paymentsFor(entry, p.who, entryPayments);
                 const out = outstanding(entry, p.who, entryPayments);
                 const status = statusOf(entry, p.who, entryPayments);
                 const theirPayments = entryPayments.filter((pm) =>
-                  sameWho(pm.who, p.who)
+                  whoEquals(pm.who, p.who)
                 );
-                return (
-                  <div className="pax-row" key={i}>
+                const visiblePay = showAllPay ? theirPayments : theirPayments.slice(0, 2);
+                const canSettle = onQuickSettle && out > 0.005;
+                const canClear = onClearPayments && theirPayments.length > 0;
+                const payIds = theirPayments.map((pm) => pm.id);
+                const rowEl = (
+                  <div className="pax-row">
                     <div className="pax-row__top">
                       <div className="pax-row__main">
                         <span className="pax-row__name">{whoName(p.who, peopleMap)}</span>
@@ -168,8 +241,13 @@ export function EntryCard({
                     </div>
 
                     {theirPayments.length > 0 && (
-                      <div className="pay-history">
-                        {theirPayments.map((pm) => (
+                      <div
+                        className={
+                          "pay-history" +
+                          (dissolving === whoKey(p.who) ? " is-dissolving" : "")
+                        }
+                      >
+                        {visiblePay.map((pm) => (
                           <div className="pay-chip" key={pm.id}>
                             <span className="pay-chip__amt">{formatMoney(pm.amount)}</span>
                             <span className="pay-chip__meta">
@@ -198,9 +276,37 @@ export function EntryCard({
                             )}
                           </div>
                         ))}
+                        {theirPayments.length > 2 && (
+                          <button
+                            className="see-more-btn"
+                            type="button"
+                            onClick={() => setShowAllPay((v) => !v)}
+                          >
+                            {showAllPay
+                              ? "Show less"
+                              : `+${theirPayments.length - 2} more payment${
+                                  theirPayments.length - 2 === 1 ? "" : "s"
+                                }`}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
+                );
+                return canSettle || canClear ? (
+                  <SwipeSettle
+                    key={i}
+                    onSettle={
+                      canSettle ? () => onQuickSettle(entry, p.who, out) : undefined
+                    }
+                    onDelete={
+                      canClear ? () => clearWithDissolve(p.who, payIds) : undefined
+                    }
+                  >
+                    {rowEl}
+                  </SwipeSettle>
+                ) : (
+                  <React.Fragment key={i}>{rowEl}</React.Fragment>
                 );
               })}
             </div>
@@ -226,11 +332,6 @@ export function EntryCard({
       )}
     </div>
   );
-}
-
-function sameWho(a, b) {
-  if (!a || !b || a.type !== b.type) return false;
-  return a.type === "me" ? true : a.personId === b.personId;
 }
 
 function Fact({ label, value, hint }) {

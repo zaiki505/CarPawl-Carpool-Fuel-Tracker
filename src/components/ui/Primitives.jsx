@@ -103,12 +103,53 @@ export function NumberInput({ value, onChange, placeholder, suffix, id, ...rest 
   );
 }
 
+/* Segmented control with a gliding, squish-stretch active indicator that
+   travels between options - same fingerprint as the bottom nav (#13-Pass4). */
 export function Segment({ options, value, onChange }) {
+  const btnRefs = React.useRef({});
+  const [ind, setInd] = React.useState(null);
+  const [moving, setMoving] = React.useState(false);
+  const first = React.useRef(true);
+
+  React.useLayoutEffect(() => {
+    const el = btnRefs.current[value];
+    if (!el) return;
+    const p = el.parentElement.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    setInd({ left: r.left - p.left, width: r.width });
+    if (!first.current) {
+      setMoving(true);
+      const t = setTimeout(() => setMoving(false), 520);
+      return () => clearTimeout(t);
+    }
+    first.current = false;
+  }, [value, options.length]);
+
+  React.useEffect(() => {
+    const onResize = () => {
+      const el = btnRefs.current[value];
+      if (!el) return;
+      const p = el.parentElement.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      setInd({ left: r.left - p.left, width: r.width });
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [value]);
+
   return (
     <div className="segment" role="group">
+      {ind && (
+        <span
+          className={"segment__indicator" + (moving ? " is-moving" : "")}
+          style={{ left: ind.left, width: ind.width }}
+          aria-hidden="true"
+        />
+      )}
       {options.map((o) => (
         <button
           key={o.value}
+          ref={(el) => (btnRefs.current[o.value] = el)}
           type="button"
           aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}

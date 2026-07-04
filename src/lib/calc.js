@@ -1,20 +1,19 @@
-/* CarPawl calculation engine - build spec §4.
+/* CarPawl calculation engine
    Pure functions only: given plain entry/payment/group objects, return numbers.
-   No DB access, no rounding baked into the math (round only at display time via
-   src/lib/format.js). Getting these right is the whole point of the app, so the
-   formulas mirror the spec line-for-line.
+   No rounding baked into the math (round only at display time via src/lib/format.js). 
+   Getting these right is the whole point of the app, nyaw!
 
-   Money is MYR; distance is km; efficiency is km/L. */
+   distance is km; efficiency is km/L. */
 
 import { whoEquals, whoKey, isMe } from "./identity.js";
 
 /* ------------------------------------------------------------------ *
- * 4.1 Fuel math (per entry)
+ * Fuel math (per entry)
  *
  * The form supplies exactly one primary value of {cost, liters, distance}.
  * The other two are derived from the group's kmPerLiter and the entry's fuel
  * price. If the user ALSO gives the optional "second real value", both liters
- * and distance are measured independently and we don't derive one from the
+ * and distance are measured independently and don't derive one from the
  * other (hasMeasuredEfficiency = true).
  * ------------------------------------------------------------------ */
 
@@ -61,7 +60,7 @@ export function deriveEntryTotals({
   }
 
   // Optional second real value: if supplied, override the derived counterpart
-  // with the measured one so efficiency = distance/liters is a real reading.
+  // with the measured one so efficiency = distance/liters is the real reading.
   let hasMeasuredEfficiency = false;
   const ml = measuredLiters == null ? null : Number(measuredLiters);
   const md = measuredDistance == null ? null : Number(measuredDistance);
@@ -100,23 +99,36 @@ export function entryEfficiency(entry) {
   return entry.totalDistance / entry.totalLiters;
 }
 
+/** Efficiency to DISPLAY: always show a km/L value. For unmeasured
+ *  entries this is the setup estimate (distance/liters equals the default km/L was used to derive them).
+ * `estimated` flags already measured entries. */
+export function entryEfficiencyDisplay(entry) {
+  if (!entry.totalLiters) return { value: null, estimated: true };
+  return {
+    value: entry.totalDistance / entry.totalLiters,
+    estimated: !entry.hasMeasuredEfficiency,
+  };
+}
+
 /* ------------------------------------------------------------------ *
  * Split methods (per-fill-up; default 'distance' for legacy entries):
- *   'distance'    share = (distanceAssigned / totalDistance) * totalCost.
- *                 Untagged distance is the owner's own driving, never billed.
- *   'equal'       fuel cost split equally among that trip's riders.
- *                 share = totalCost / numPassengers (owner not charged).
- *   'driver_comp' passengers fully compensate the driver: the base is
- *                 (fuel + tolls + parking) * (1 + maintenance%), split equally.
- *                 share = base / numPassengers (owner pays nothing).
- * ------------------------------------------------------------------ */
+*   'distance'        share = (distanceAssigned / totalDistance) * totalCost. 
+*                     Untagged distance is the owner's own driving, never billed.
+*   
+*   'equal'           fuel cost split equally among that trip's riders.
+*                     share = totalCost / numPassengers (owner not charged).
+*   
+*   'driver_comp'     passengers fully compensate the driver: the base is
+*                     (fuel + tolls + parking) * (1 + maintenance%), split equally.
+*                     share = base / numPassengers (owner pays nothing).
+* ------------------------------------------------------------------ */
 export const SPLIT_METHODS = ["distance", "equal", "driver_comp"];
 
 export function splitMethodOf(entry) {
   return entry.splitMethod || "distance";
 }
 
-/** The total amount billed to passengers for driver-comp (fuel+tolls+parking+maint). */
+/** The total amount billed to passengers for compensation (fuel+tolls+parking+maint). */
 export function driverCompBase(entry) {
   const fuel = Number(entry.totalCost) || 0;
   const tolls = Number(entry.tolls) || 0;
@@ -125,7 +137,7 @@ export function driverCompBase(entry) {
   return (fuel + tolls + parking) * (1 + maint / 100);
 }
 
-/* 4.2 Passenger share — method-aware. */
+/* Passenger share is method-aware. */
 export function share(entry, who) {
   const pax = entry.passengers || [];
   const p = pax.find((x) => whoEquals(x.who, who));
@@ -149,9 +161,20 @@ export function shareOfRow(entry, passengerRow) {
 }
 
 /** Total billed to all passengers for an entry (sum of shares). For distance
- *  this can be less than totalCost (owner's untagged driving is excluded). */
-export function entryTotalBillable(entry) {
-  return (entry.passengers || []).reduce((sum, p) => sum + shareOfRow(entry, p), 0);
+ *  this can be less than totalCost (owner's untagged driving is excluded).
+ *  With { excludeMe }, drops your own share (what's actually collectible in
+ *  your own vehicle). */
+export function entryTotalBillable(entry, { excludeMe = false } = {}) {
+  return (entry.passengers || [])
+    .filter((p) => !(excludeMe && isMe(p.who)))
+    .reduce((sum, p) => sum + shareOfRow(entry, p), 0);
+}
+
+/** What you'll collect from an entry given whether it's your own vehicle. In
+ *  your own vehicle, your own share isn't collectible; in a carpool you're a
+ *  passenger, it's your own share you owe the driver. */
+export function entryCollectible(entry, { ownedByMe = false } = {}) {
+  return entryTotalBillable(entry, { excludeMe: ownedByMe });
 }
 
 /** Total collected from all passengers on an entry (all payments on it). */
@@ -169,8 +192,8 @@ export function paymentsFor(entry, who, payments) {
 }
 
 /* ------------------------------------------------------------------ *
- * 4.3 Per-entry-passenger outstanding
- *   outstanding = share - Σ payments(who, entry)
+ * Per-entry-passenger outstanding
+ *   outstanding = share - sum payments(who, entry)
  * Can go negative (overpayment / credit).
  * ------------------------------------------------------------------ */
 export function outstanding(entry, who, payments) {
@@ -190,9 +213,9 @@ export function statusOf(entry, who, payments) {
 }
 
 /* ------------------------------------------------------------------ *
- * 4.4 Balance per passenger, per group
- *   owed   = Σ outstanding(entry, who) over entries where outstanding > 0
- *   credit = Σ |outstanding(entry, who)| over entries where outstanding < 0
+ * Balance per passenger, per group
+ *   owed   = sum outstanding(entry, who) over entries where outstanding > 0
+ *   credit = sum |outstanding(entry, who)| over entries where outstanding < 0
  * Never netted together.
  * ------------------------------------------------------------------ */
 export function balanceForWho(groupEntries, who, payments) {
@@ -211,10 +234,13 @@ export function balanceForWho(groupEntries, who, payments) {
  * cumulative {owed, credit} balance. Used by Group Detail.
  * @returns {Array<{ who, owed, credit }>}
  */
-export function groupBalances(groupEntries, payments) {
+export function groupBalances(groupEntries, payments, { excludeMe = false } = {}) {
   const map = new Map();
   for (const entry of groupEntries) {
     for (const p of entry.passengers || []) {
+      // In your own vehicle, "Me" is tracked for reference but never owed to
+      // you, so it's excluded from the owed/credit balances.
+      if (excludeMe && isMe(p.who)) continue;
       const key = whoKey(p.who);
       if (!map.has(key)) map.set(key, { who: p.who });
     }
@@ -237,7 +263,8 @@ export function totalOwedToYou(ownedGroups, entriesByGroup, payments) {
   let total = 0;
   for (const g of ownedGroups) {
     const entries = entriesByGroup[g.id] || [];
-    for (const row of groupBalances(entries, payments)) {
+    // "Me" is never owed to you in your own vehicle.
+    for (const row of groupBalances(entries, payments, { excludeMe: true })) {
       total += row.owed;
     }
   }
@@ -258,7 +285,7 @@ export function totalYouOwe(nonOwnedGroups, entriesByGroup, payments) {
 
 /* ------------------------------------------------------------------ *
  * Date helpers for month bucketing. All dates are ISO 'YYYY-MM-DD' (or full
- * ISO); we compare by year+month in local time.
+ * ISO); compare by year+month in local time.
  * ------------------------------------------------------------------ */
 export function ymOf(dateStr) {
   const d = new Date(dateStr);
@@ -270,57 +297,8 @@ export function isSameMonth(dateStr, ref = new Date()) {
 }
 
 /* ------------------------------------------------------------------ *
- * 4.6 This month's spend (cash-flow, not a balance)
- *   Σ entry.totalCost   (owned groups, entry.date in month)
- * − Σ payment.amount     (received from others in owned groups, payment.date in month)
- * + Σ payment.amount     (paid by me toward my share in non-owned groups, payment.date in month)
- * Note the different date fields per term.
- * ------------------------------------------------------------------ */
-export function thisMonthSpend({
-  ownedGroups,
-  nonOwnedGroups,
-  entriesByGroup,
-  payments,
-  ref = new Date(),
-}) {
-  const ownedIds = new Set(ownedGroups.map((g) => g.id));
-  const nonOwnedIds = new Set(nonOwnedGroups.map((g) => g.id));
-
-  // entry.id -> groupId lookup for payments
-  const entryGroup = new Map();
-  for (const gid of Object.keys(entriesByGroup)) {
-    for (const e of entriesByGroup[gid]) entryGroup.set(e.id, gid);
-  }
-
-  let spend = 0;
-
-  // + fuel cost you paid the vendor (bucket by entry date)
-  for (const g of ownedGroups) {
-    for (const e of entriesByGroup[g.id] || []) {
-      if (isSameMonth(e.date, ref)) spend += Number(e.totalCost) || 0;
-    }
-  }
-
-  for (const pm of payments || []) {
-    if (!isSameMonth(pm.date, ref)) continue;
-    const gid = entryGroup.get(pm.entryId);
-    if (gid == null) continue;
-    const amt = Number(pm.amount) || 0;
-    if (ownedIds.has(gid) && !isMe(pm.who)) {
-      // − money received from other people in your owned groups
-      spend -= amt;
-    } else if (nonOwnedIds.has(gid) && isMe(pm.who)) {
-      // + money you paid toward your own share in groups you don't own
-      spend += amt;
-    }
-  }
-
-  return spend;
-}
-
-/* ------------------------------------------------------------------ *
- * 4.7 Total fuel consumption this month (owned groups only, by entry date)
- *   Σ totalCost, Σ totalLiters
+ * Total fuel consumption this month (owned groups only, by entry date)
+ *   sum totalCost, sum totalLiters
  * ------------------------------------------------------------------ */
 export function thisMonthConsumption({ ownedGroups, entriesByGroup, ref = new Date() }) {
   let cost = 0;
@@ -337,7 +315,7 @@ export function thisMonthConsumption({ ownedGroups, entriesByGroup, ref = new Da
 }
 
 /* ------------------------------------------------------------------ *
- * 4.8 Fuel efficiency trend (per group)
+ * Fuel efficiency trend (per group)
  *   Last 30 days, only entries with hasMeasuredEfficiency = true.
  *   Point = { date, efficiency }. Skip unmeasured entries entirely.
  * ------------------------------------------------------------------ */

@@ -2,9 +2,9 @@ import { groupBalances } from "./calc.js";
 import { formatMoney, formatMoneyShort, formatDate } from "./format.js";
 import { whoName } from "./names.js";
 
-/* Plain-text balances export for sharing (§7.3). Lists every passenger's
+/* Plain-text balances export for sharing. Lists every passenger's
    current outstanding balance in a group. Delivered through the device's native
-   share sheet - never a WhatsApp deep link to a specific contact. */
+   share sheet. */
 export function buildWhatsAppText(group, entries, payments, peopleMap) {
   const balances = groupBalances(entries, payments);
   const lines = [];
@@ -46,9 +46,8 @@ export async function shareText(text, title) {
       await navigator.share({ title, text });
       return "shared";
     } catch (e) {
-      // User dismissed the share sheet - not an error worth surfacing.
+      // User dismissed the share sheet, fall through to clipboard on other failures
       if (e && e.name === "AbortError") return "shared";
-      // fall through to clipboard on other failures
     }
   }
   try {

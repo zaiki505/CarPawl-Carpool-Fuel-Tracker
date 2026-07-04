@@ -1,13 +1,16 @@
 /* "who" identity helpers.
 
    A passenger/payer is identified by a `who` object:
-     { type: 'me' }                         -> the app's single built-in user
-     { type: 'person', personId: '...' }    -> a saved Person
+    { type: 'me' } -> the app's single built-in user
+    { type: 'person', personId: '...' } -> a saved Person
 
    "Me" is never a Person row. In owned groups (ownerType === 'me') the owner is
    never added as a passenger at all; "me" only appears as a passenger in
    non-owned groups. These helpers give a stable string key and equality so we
-   can group/sum by payer consistently. */
+   can group/sum by payer consistently. 
+   
+   REMEMBER ZAI: "me" is a special case and
+   should not be treated as a regular person.  */
 
 export const ME = Object.freeze({ type: "me" });
 

@@ -2,29 +2,40 @@ import React, { useMemo, useState } from "react";
 import { useAllData } from "../db/hooks.js";
 import { useEntryActions } from "../app/useEntryActions.js";
 import { EntryCard } from "../components/EntryCard.jsx";
-import { EmptyState } from "../components/ui/Primitives.jsx";
-import { whoKey } from "../lib/identity.js";
-import { ME } from "../lib/identity.js";
-import { whoName } from "../lib/names.js";
+import { EmptyState, Segment } from "../components/ui/Primitives.jsx";
+import { Select } from "../components/ui/Select.jsx";
+import { DatePicker } from "../components/ui/DatePicker.jsx";
+import { share, paymentsFor } from "../lib/calc.js";
+import { formatMoney } from "../lib/format.js";
+import { whoKey, ME } from "../lib/identity.js";
 
-/* History (§7.5): every entry across every group, filterable by group, by
-   passenger, and by date range. */
+/* History (7.5) - every fill-up, filterable by ownership (All / My Vehicles /
+   Carpools), specific vehicle, passenger (multi-select), and
+   date. Selecting passengers hides everyone else inside each fill-up and shows
+   their combined totals. */
 export function History() {
   const data = useAllData();
   const entryActions = useEntryActions();
 
+  const [ownership, setOwnership] = useState("all"); // all | owned | carpool
   const [groupFilter, setGroupFilter] = useState("all");
-  const [personFilter, setPersonFilter] = useState("all");
+  const [whoFilter, setWhoFilter] = useState([]); // array of whoKeys
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
 
+  const whoSet = useMemo(() => new Set(whoFilter), [whoFilter]);
+
   const filtered = useMemo(() => {
     if (!data) return [];
+    const ownedMap = data.groupOwnedMap;
     return data.entries
       .filter((e) => {
+        const owned = ownedMap.get(e.groupId);
+        if (ownership === "owned" && !owned) return false;
+        if (ownership === "carpool" && owned) return false;
         if (groupFilter !== "all" && e.groupId !== groupFilter) return false;
-        if (personFilter !== "all") {
-          const has = (e.passengers || []).some((p) => whoKey(p.who) === personFilter);
+        if (whoSet.size > 0) {
+          const has = (e.passengers || []).some((p) => whoSet.has(whoKey(p.who)));
           if (!has) return false;
         }
         if (from && new Date(e.date) < new Date(from)) return false;
@@ -35,19 +46,59 @@ export function History() {
         const d = new Date(b.date) - new Date(a.date);
         return d !== 0 ? d : new Date(b.createdAt) - new Date(a.createdAt);
       });
-  }, [data, groupFilter, personFilter, from, to]);
+  }, [data, ownership, groupFilter, whoSet, from, to]);
+
+  // Combined totals for the selected passengers across the filtered fill-ups.
+  const summary = useMemo(() => {
+    if (!data || whoFilter.length === 0) return null;
+    let shareTot = 0;
+    let paidTot = 0;
+    for (const e of filtered) {
+      for (const p of e.passengers || []) {
+        if (!whoSet.has(whoKey(p.who))) continue;
+        shareTot += share(e, p.who);
+        paidTot += paymentsFor(e, p.who, data.payments);
+      }
+    }
+    return { shareTot, paidTot, outstanding: shareTot - paidTot };
+  }, [data, filtered, whoSet, whoFilter]);
 
   if (!data) return <div className="app-shell" />;
 
-  const { entries, payments, peopleMap, activeGroups, people, nonOwnedGroups } = data;
+  const { payments, peopleMap, people, nonOwnedGroups, groupMap } = data;
 
-  // Passenger filter options: "me" (if any non-owned group exists) + all people.
-  const personOptions = [];
-  if (nonOwnedGroups.length > 0) personOptions.push({ key: whoKey(ME), label: "Me" });
-  for (const p of people) personOptions.push({ key: whoKey({ type: "person", personId: p.id }), label: p.name });
+  // Vehicle dropdown: any vehicle that appears in history and isn't cleared -
+  // including archived ones (their fill-ups still show, so let them be filtered).
+  const groupsWithHistory = new Set(data.entries.map((e) => e.groupId));
+  const groupOptions = [
+    { value: "all", label: "All vehicles" },
+    ...data.groups
+      .filter((g) => !g.cleared && groupsWithHistory.has(g.id))
+      .filter((g) =>
+        ownership === "owned"
+          ? g.ownerType === "me"
+          : ownership === "carpool"
+          ? g.ownerType === "person"
+          : true
+      )
+      .map((g) => ({
+        value: g.id,
+        label: g.isArchived ? `${g.name} (archived)` : g.name,
+      })),
+  ];
+
+  const whoOptions = [];
+  // Offer "Me" when you're on any fill-up: as a carpool passenger, or tagged in
+  // your own vehicle (#2).
+  const meOnAnyEntry =
+    nonOwnedGroups.length > 0 ||
+    data.entries.some((e) => (e.passengers || []).some((p) => p.who?.type === "me"));
+  if (meOnAnyEntry) whoOptions.push({ value: whoKey(ME), label: "Me" });
+  for (const p of people)
+    whoOptions.push({ value: whoKey({ type: "person", personId: p.id }), label: p.name });
 
   const hasFilters =
-    groupFilter !== "all" || personFilter !== "all" || from || to;
+    ownership !== "all" || groupFilter !== "all" || whoFilter.length > 0 || from || to;
 
   return (
     <div className="app-shell stagger">
@@ -58,38 +109,46 @@ export function History() {
         </div>
       </header>
 
+      {/* Ownership tag */}
+      <div className="section-block">
+        <Segment
+          value={ownership}
+          onChange={(v) => {
+            setOwnership(v);
+            setGroupFilter("all");
+          }}
+          options={[
+            { value: "all", label: "All" },
+            { value: "owned", label: "My Vehicles" },
+            { value: "carpool", label: "Carpools" },
+          ]}
+        />
+      </div>
+
       {/* Filters */}
       <div className="detail-panel section-block">
         <div className="filter-grid">
           <label className="filter-field">
-            <span>Group</span>
-            <select value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}>
-              <option value="all">All groups</option>
-              {activeGroups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
+            <span>Vehicle</span>
+            <Select value={groupFilter} onChange={setGroupFilter} options={groupOptions} />
           </label>
           <label className="filter-field">
-            <span>Passenger</span>
-            <select value={personFilter} onChange={(e) => setPersonFilter(e.target.value)}>
-              <option value="all">Anyone</option>
-              {personOptions.map((o) => (
-                <option key={o.key} value={o.key}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+            <span>Passengers</span>
+            <Select
+              multi
+              value={whoFilter}
+              onChange={setWhoFilter}
+              options={whoOptions}
+              allLabel="Anyone"
+            />
           </label>
           <label className="filter-field">
             <span>From</span>
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <DatePicker value={from} onChange={setFrom} placeholder="Any" clearable />
           </label>
           <label className="filter-field">
             <span>To</span>
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            <DatePicker value={to} onChange={setTo} placeholder="Any" clearable />
           </label>
         </div>
         {hasFilters && (
@@ -98,8 +157,9 @@ export function History() {
             type="button"
             style={{ marginTop: "0.6rem" }}
             onClick={() => {
+              setOwnership("all");
               setGroupFilter("all");
-              setPersonFilter("all");
+              setWhoFilter([]);
               setFrom("");
               setTo("");
             }}
@@ -109,8 +169,34 @@ export function History() {
         )}
       </div>
 
+      {/* Passenger totals summary */}
+      {summary && (
+        <div className="detail-panel section-block filter-summary">
+          <div className="filter-summary__who">
+            {whoFilter
+              .map((k) => {
+                const opt = whoOptions.find((o) => o.value === k);
+                return opt?.label;
+              })
+              .filter(Boolean)
+              .join(", ")}
+          </div>
+          <div className="filter-summary__nums">
+            <span>
+              share <strong>{formatMoney(summary.shareTot)}</strong>
+            </span>
+            <span className="pos">
+              paid <strong>{formatMoney(summary.paidTot)}</strong>
+            </span>
+            <span className={summary.outstanding > 0.005 ? "neg" : "faint"}>
+              outstanding <strong>{formatMoney(Math.max(0, summary.outstanding))}</strong>
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Results */}
-      {entries.length === 0 ? (
+      {data.entries.length === 0 ? (
         <EmptyState emoji="⛽" title="No fill-ups yet">
           Tap the + button to log your first fuel entry.
         </EmptyState>
@@ -130,9 +216,14 @@ export function History() {
               entry={e}
               payments={payments}
               peopleMap={peopleMap}
+              ownedByMe={data.groupOwnedMap.get(e.groupId)}
+              fallbackTitle={groupMap.get(e.groupId)?.name}
+              onlyWho={whoFilter.length > 0 ? whoSet : null}
               onRecordPayment={entryActions.onRecordPayment}
               onEditPayment={entryActions.onEditPayment}
               onDeletePayment={entryActions.onDeletePayment}
+              onQuickSettle={entryActions.onQuickSettle}
+              onClearPayments={entryActions.onClearPayments}
               onEdit={entryActions.onEditEntry}
               onDelete={entryActions.onDeleteEntry}
             />
