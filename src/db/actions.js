@@ -168,7 +168,7 @@ export async function createEntry(entry) {
     createdAt: nowISO(),
     updatedAt: nowISO(),
   };
-  if (!row.date) throw new Error("Pick a date for this fill-up.");
+  if (!row.date) throw new Error("Pick a date for this refuel.");
   await db.entries.add(row);
   return row;
 }
@@ -281,14 +281,15 @@ export async function markOnboarded() {
   if (!s.onboardedAt) await updateSettings({ onboardedAt: nowISO() });
 }
 
-/** First-run car creation: creates an owned group and flips the onboarded flag. */
-export async function createFirstCar({ name, defaultKmPerLiter }) {
+/** First-run car creation. Flips the onboarded flag unless the caller wants to
+ *  defer it (e.g. a following prefs step still to come). */
+export async function createFirstCar({ name, defaultKmPerLiter, finishOnboarding = true }) {
   const group = await createGroup({
     name,
     ownerType: "me",
     defaultKmPerLiter,
   });
-  await markOnboarded();
+  if (finishOnboarding) await markOnboarded();
   return group;
 }
 

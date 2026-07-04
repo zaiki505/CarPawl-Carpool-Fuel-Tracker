@@ -22,10 +22,10 @@ export function Groups() {
           <h1 className="screen-head__title">Vehicles</h1>
         </div>
         <button
-          className="cta-primary"
+          className="cta-contrast"
           type="button"
           onClick={() => openSheet({ type: "createGroup" })}
-          style={{ padding: "0.6rem 1rem" }}
+          style={{ padding: "0.6rem 1rem", whiteSpace: "nowrap" }}
         >
           <Plus size={16} /> Add
         </button>
@@ -36,7 +36,12 @@ export function Groups() {
           My Vehicle(s)
         </h2>
         {ownedGroups.length === 0 ? (
-          <EmptyState emoji="🚗" title="No cars yet">
+          <EmptyState
+            emoji="🚗"
+            title="No cars yet"
+            actionLabel="+ Add your car"
+            onAction={() => openSheet({ type: "createGroup" })}
+          >
             Tap “Add” and choose “Mine” to register your first car.
           </EmptyState>
         ) : (
@@ -58,7 +63,12 @@ export function Groups() {
           Carpools
         </h2>
         {nonOwnedGroups.length === 0 ? (
-          <EmptyState emoji="🧑‍🤝‍🧑" title="No carpools yet">
+          <EmptyState
+            emoji="🧑‍🤝‍🧑"
+            title="No carpools yet"
+            actionLabel="+ Add a carpool"
+            onAction={() => openSheet({ type: "createGroup" })}
+          >
             Riding in someone else's car? Add a vehicle and choose “Someone
             else's” to track your share.
           </EmptyState>

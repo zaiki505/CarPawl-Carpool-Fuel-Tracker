@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { computeFuelSpend, FUEL_PERIODS } from "../lib/fuelSpend.js";
+import { computeFuelSpend, FUEL_PERIODS, NO_BASELINE_MESSAGES } from "../lib/fuelSpend.js";
 import { share } from "../lib/calc.js";
 import { ME } from "../lib/identity.js";
 import { formatMoney } from "../lib/format.js";
@@ -11,6 +11,10 @@ import { TrendingUp, TrendingDown, Fuel } from "./ui/Icons.jsx";
    with a message when there's no baseline. */
 export function FuelSpendCard({ entries, groupOwnedMap }) {
   const [period, setPeriod] = useState("month");
+  // Fresh no-baseline message each page load, stable across re-renders (#12).
+  const [funMsg] = useState(
+    () => NO_BASELINE_MESSAGES[Math.floor(Math.random() * NO_BASELINE_MESSAGES.length)]
+  );
 
   const result = useMemo(
     () =>
@@ -26,6 +30,7 @@ export function FuelSpendCard({ entries, groupOwnedMap }) {
 
   const { yourSpend, yourSpendBreakdown, groupTotal, trend } = result;
   const up = trend.direction === "up";
+  const curPeriod = FUEL_PERIODS.find((p) => p.value === period) || FUEL_PERIODS[0];
 
   return (
     <div className="stat-card stat-card--accent stat-card--wide fuel-spend-card">
@@ -34,6 +39,21 @@ export function FuelSpendCard({ entries, groupOwnedMap }) {
           <Fuel size={13} /> Total Fuel Spend
         </span>
         <Segment value={period} onChange={setPeriod} options={FUEL_PERIODS} />
+        {/* Small screens: one compact pill that cycles through the periods.
+            The flanking chevrons hint that tapping advances it (#10). */}
+        <button
+          type="button"
+          className="period-cycle"
+          onClick={() => {
+            const i = FUEL_PERIODS.findIndex((p) => p.value === period);
+            setPeriod(FUEL_PERIODS[(i + 1) % FUEL_PERIODS.length].value);
+          }}
+          aria-label={`Period: ${curPeriod.label}. Tap to change.`}
+        >
+          <span className="period-cycle__chev period-cycle__chev--l" aria-hidden="true" />
+          {curPeriod.label}
+          <span className="period-cycle__chev period-cycle__chev--r" aria-hidden="true" />
+        </button>
       </div>
 
       <span className="stat-card__value">{formatMoney(yourSpend)}</span>
@@ -56,7 +76,7 @@ export function FuelSpendCard({ entries, groupOwnedMap }) {
           </span>
         ) : (
           <span className="faint" style={{ fontStyle: "italic" }}>
-            {trend.message}
+            {funMsg}
           </span>
         )}
       </div>

@@ -151,7 +151,7 @@ export function GroupDetail({ groupId }) {
                 <Fuel size={14} /> {formatKmpl(group.defaultKmPerLiter)}
               </span>
               <span className="chip-fact">
-                {entries.length} fill-up{entries.length === 1 ? "" : "s"}
+                {entries.length} refuel{entries.length === 1 ? "" : "s"}
               </span>
             </div>
             <button className="icon-btn" type="button" onClick={startEdit} aria-label="Edit car">
@@ -208,10 +208,10 @@ export function GroupDetail({ groupId }) {
       {/* Entries */}
       <section className="section-block">
         <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
-          Fill-ups
+          Refuels
         </h2>
         {entries.length === 0 ? (
-          <EmptyState emoji="⛽" title="No fill-ups yet">
+          <EmptyState emoji="⛽" title="No refuels yet">
             Tap the + button to log this {isOwned ? "car's" : "carpool's"} first
             fuel entry.
           </EmptyState>
@@ -223,6 +223,7 @@ export function GroupDetail({ groupId }) {
               payments={payments}
               peopleMap={peopleMap}
               ownedByMe={isOwned}
+              ownerName={personName(group.ownerPersonId, peopleMap)}
               fallbackTitle={group.name}
               onRecordPayment={entryActions.onRecordPayment}
               onEditPayment={entryActions.onEditPayment}
@@ -236,8 +237,12 @@ export function GroupDetail({ groupId }) {
         )}
       </section>
 
-      {/* Danger zone */}
+      {/* Danger zone - same heading treatment as Settings' danger zone, so
+          destructive actions read consistently across the app. */}
       <section className="section-block">
+        <h2 className="section-block__title" style={{ marginBottom: "0.6rem", color: "#ff6b81" }}>
+          Danger zone
+        </h2>
         <button className="action-btn btn-block btn-danger" type="button" onClick={onArchive}>
           <Archive size={16} /> Archive this {isOwned ? "car" : "carpool"}
         </button>
@@ -247,7 +252,7 @@ export function GroupDetail({ groupId }) {
       {payPickerWho && (
         <ActionMenu
           title={`Pay for ${whoName(payPickerWho, peopleMap)}`}
-          subtitle="Which fill-up is this payment for?"
+          subtitle="Which refuel is this payment for?"
           onClose={() => setPayPickerWho(null)}
           items={payableEntriesFor(payPickerWho).map((e) => {
             const out = outstanding(e, payPickerWho, payments);

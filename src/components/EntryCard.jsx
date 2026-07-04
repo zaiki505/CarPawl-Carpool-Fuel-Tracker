@@ -34,14 +34,15 @@ const STATUS_COLOR = {
 };
 
 /* One fill-up.
-   - `ownedByMe`: user own vehicle -> user own "Me" share is shown for reference but never billed/collectible.
-   - `onlyWho`: a Set of whoKeys to show; when set, non-matching passengers are hidden 
+   - `ownedByMe`: your own vehicle -> your "Me" share shows for reference, never billed or collectible.
+   - `onlyWho`: a Set of whoKeys to show; when set, non-matching passengers are hidden
                 and the collected/total figures reflect only the selected ones. */
 export function EntryCard({
   entry,
   payments,
   peopleMap,
   ownedByMe = false,
+  ownerName,
   onlyWho = null,
   fallbackTitle,
   onRecordPayment,
@@ -71,9 +72,9 @@ export function EntryCard({
   const method = splitMethodOf(entry);
   const effDisp = entryEfficiencyDisplay(entry);
 
-  // Passengers we actually show/count (apply the History filter). In user own
-  // vehicle "Me" share is billed and covered by user: part of the
-  // fill-up total and shows as covered, but it's never a red owed user chase.
+  // Passengers we actually show/count (the History filter applied). In your own
+  // vehicle your "Me" share is billed and already covered - it counts toward
+  // the fill-up total but never shows up as something owed to chase.
   const passengers = onlyWho
     ? allPassengers.filter((p) => onlyWho.has(whoKey(p.who)))
     : allPassengers;
@@ -82,8 +83,8 @@ export function EntryCard({
     .filter((p) => ownedByMe && isMe(p.who))
     .reduce((sum, p) => sum + share(entry, p.who), 0);
 
-  // Total billed includes user own share; collected counts user share as
-  // already covered (user paid the pump) plus real passenger payments.
+  // Billed includes your own share; collected counts that share as already
+  // covered (you paid the pump) plus real passenger payments.
   const billable = passengers.reduce((sum, p) => sum + share(entry, p.who), 0);
   const collected =
     otherPax.reduce((sum, p) => sum + paymentsFor(entry, p.who, entryPayments), 0) +
@@ -99,7 +100,7 @@ export function EntryCard({
     else if (statuses.some((s) => s === "partial" || s === "paid")) rollup = "partial";
     else rollup = "unpaid";
   } else if (hasPax) {
-    rollup = "paid"; // only user own covered share
+    rollup = "paid"; // only your own covered share
   }
 
   const effText =
@@ -116,16 +117,27 @@ export function EntryCard({
         type="button"
         aria-expanded={open}
       >
-        <span className="list-row__icon list-row__icon--fillup">
+        <span
+          className={
+            "list-row__icon " +
+            (ownedByMe ? "list-row__icon--fillup" : "list-row__icon--carpool")
+          }
+        >
           <Fuel size={20} />
         </span>
         <div className="list-row__body">
           <div className="list-row__title">
-            {entry.title || fallbackTitle || "Fill-up"}
+            {entry.title || fallbackTitle || "Refuel"}
           </div>
           <div className="list-row__meta">
-            {hasPax ? splitMethodShort(method) : "Personal fill-up"}
-            {effText ? ` · ${effText}` : ""}
+            <span>{hasPax ? splitMethodShort(method) : "Personal refuel"}</span>
+            <span
+              className={
+                "owner-chip " + (ownedByMe ? "owner-chip--mine" : "owner-chip--other")
+              }
+            >
+              {ownedByMe ? "You" : ownerName || "Someone"}
+            </span>
           </div>
         </div>
         <div className="list-row__trailing">
@@ -171,14 +183,14 @@ export function EntryCard({
 
           {!hasPax ? (
             <p className="faint" style={{ fontSize: "0.8rem", margin: "0.4rem 0 0" }}>
-              Personal fill-up - no passengers to split with.
+              Personal refuel - no passengers to split with.
             </p>
           ) : (
             <div className="pax-list">
               {passengers.map((p, i) => {
                 const meInOwned = ownedByMe && isMe(p.who);
                 const s = share(entry, p.who);
-                // user own share in user own vehicle: reference only.
+                // your own share in your own vehicle: reference only.
                 if (meInOwned) {
                   return (
                     <div className="pax-row pax-row--me" key={i}>

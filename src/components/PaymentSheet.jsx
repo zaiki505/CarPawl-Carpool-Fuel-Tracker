@@ -106,7 +106,7 @@ export function PaymentSheet({ entry, who, payment, peopleMap, onClose }) {
           <span className="muted">From</span>
           <strong>{name}</strong>
           <span className="muted">for</span>
-          <strong>{entry.title || "this fill-up"}</strong>
+          <strong>{entry.title || "this refuel"}</strong>
           <div className="payment-context__balance">
             {out > 0 ? (
               <>

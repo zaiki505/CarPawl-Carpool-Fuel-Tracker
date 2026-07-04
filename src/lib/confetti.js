@@ -4,9 +4,12 @@
 
 const COLORS = ["#a754ff", "#d48cff", "#00e676", "#79c2ff", "#ffd166", "#ec489a"];
 
+import { haptic } from "./haptics.js";
+
 export function confettiBurst(x, y) {
   if (typeof window === "undefined") return;
   if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  haptic("success");
 
   const originX = x ?? window.innerWidth / 2;
   const originY = y ?? window.innerHeight / 2.4;

@@ -5,6 +5,7 @@ import { DEFAULTS, updateSettings } from "../db/db.js";
 import { useApp } from "../app/AppContext.jsx";
 import { Field, Segment, NumberInput } from "./ui/Primitives.jsx";
 import { SPLIT_METHOD_OPTIONS, SPLIT_METHOD_HINTS } from "../lib/splitMethods.js";
+import { haptic } from "../lib/haptics.js";
 import { Plus, Check } from "./ui/Icons.jsx";
 
 /* Group creation form. Two modes:
@@ -13,7 +14,7 @@ import { Plus, Check } from "./ui/Icons.jsx";
    - 'create'   asks "Is this your vehicle, or someone else's?" first (§5);
                 "someone else's" requires picking or adding a Person.
    Reused inside a Sheet (create) and on the Onboarding screen. */
-export function GroupForm({ mode = "create", onDone }) {
+export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false }) {
   const people = usePeople() || [];
   const { toast } = useApp();
 
@@ -55,7 +56,11 @@ export function GroupForm({ mode = "create", onDone }) {
       let group;
       if (mode === "onboard") {
         await updateSettings({ defaultSplitMethod: splitMethod });
-        group = await createFirstCar({ name, defaultKmPerLiter: Number(kmpl) });
+        group = await createFirstCar({
+          name,
+          defaultKmPerLiter: Number(kmpl),
+          finishOnboarding: !deferOnboardFinish,
+        });
       } else {
         group = await createGroup({
           name,
@@ -64,6 +69,7 @@ export function GroupForm({ mode = "create", onDone }) {
           defaultKmPerLiter: Number(kmpl),
         });
       }
+      haptic("light");
       toast(
         mode === "onboard"
           ? `${group.name} is on the road 🚗`
@@ -152,7 +158,7 @@ export function GroupForm({ mode = "create", onDone }) {
       {mode === "onboard" && (
         <Field
           label="Default way to split carpools"
-          hint={SPLIT_METHOD_HINTS[splitMethod] + " You can change this any time, and override it per fill-up."}
+          hint={SPLIT_METHOD_HINTS[splitMethod] + " You can change this any time, and override it per refuel."}
         >
           <Segment
             value={splitMethod}

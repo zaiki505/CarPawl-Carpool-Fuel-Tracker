@@ -2,6 +2,7 @@ import { useApp } from "./AppContext.jsx";
 import { removeEntry, removePayment, createPayment, clearPayments } from "../db/actions.js";
 import { formatMoney, todayISODate } from "../lib/format.js";
 import { confettiBurst } from "../lib/confetti.js";
+import { haptic } from "../lib/haptics.js";
 
 /* Shared Pay / Edit / Delete handlers for fill-ups and payments, so every
    screen that renders an EntryCard (Dashboard, History, Group Detail) behaves
@@ -24,6 +25,7 @@ export function useEntryActions() {
     });
     if (!ok) return;
     await removePayment(payment.id);
+    haptic("medium");
     toast("Payment deleted");
   };
 
@@ -47,6 +49,7 @@ export function useEntryActions() {
   const onClearPayments = async (entry, who, paymentIds) => {
     if (!paymentIds?.length) return;
     await clearPayments(paymentIds);
+    haptic("medium");
     toast("Payments cleared");
   };
 
@@ -54,14 +57,15 @@ export function useEntryActions() {
 
   const onDeleteEntry = async (entry) => {
     const ok = await askConfirm({
-      title: "Delete this fill-up?",
+      title: "Delete this refuel?",
       body: "This removes the entry and any payments recorded against it. This can't be undone.",
       confirmLabel: "Delete",
       danger: true,
     });
     if (!ok) return;
     await removeEntry(entry.id);
-    toast("Fill-up deleted");
+    haptic("medium");
+    toast("Refuel deleted");
   };
 
   return {

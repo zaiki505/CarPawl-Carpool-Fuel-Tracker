@@ -1,4 +1,5 @@
 import React from "react";
+import { haptic } from "../../lib/haptics.js";
 const { useRef, useEffect, useState } = React;
 
 /* The Zaiki interactive Cyber Cat mascot. SVG geometry lifted verbatim from
@@ -92,6 +93,7 @@ export function CyberCat({ size = 120, hint = "Meow!" }) {
 
   const onClick = () => {
     if (mood === "flee") return;
+    haptic("playful");
     clicks.current += 1;
     clearTimeout(clickTimer.current);
     clickTimer.current = setTimeout(() => { clicks.current = 0; }, 900);

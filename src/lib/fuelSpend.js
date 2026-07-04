@@ -57,7 +57,7 @@ export function previousPeriodRange(period, ref = new Date()) {
   return null;
 }
 
-const NO_BASELINE_MESSAGES = [
+export const NO_BASELINE_MESSAGES = [
   "No history to race against, you're on gear one.",
   "Nothing before this, fresh tank, fresh start.",
   "First of its kind. Come back next period!",

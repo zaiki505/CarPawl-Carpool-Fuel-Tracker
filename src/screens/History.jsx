@@ -8,6 +8,8 @@ import { DatePicker } from "../components/ui/DatePicker.jsx";
 import { share, paymentsFor } from "../lib/calc.js";
 import { formatMoney } from "../lib/format.js";
 import { whoKey, ME } from "../lib/identity.js";
+import { personName } from "../lib/names.js";
+import { ChevronDown } from "../components/ui/Icons.jsx";
 
 /* History (7.5) - every fill-up, filterable by ownership (All / My Vehicles /
    Carpools), specific vehicle, passenger (multi-select), and
@@ -22,6 +24,7 @@ export function History() {
   const [whoFilter, setWhoFilter] = useState([]); // array of whoKeys
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
 
   const whoSet = useMemo(() => new Set(whoFilter), [whoFilter]);
 
@@ -97,14 +100,19 @@ export function History() {
   for (const p of people)
     whoOptions.push({ value: whoKey({ type: "person", personId: p.id }), label: p.name });
 
-  const hasFilters =
-    ownership !== "all" || groupFilter !== "all" || whoFilter.length > 0 || from || to;
+  const activeFilterCount = [
+    groupFilter !== "all",
+    whoFilter.length > 0,
+    Boolean(from),
+    Boolean(to),
+  ].filter(Boolean).length;
+  const hasFilters = ownership !== "all" || activeFilterCount > 0;
 
   return (
     <div className="app-shell stagger">
       <header className="screen-head">
         <div>
-          <p className="screen-head__kicker">Every fill-up</p>
+          <p className="screen-head__kicker">Every refuel</p>
           <h1 className="screen-head__title">History</h1>
         </div>
       </header>
@@ -125,47 +133,69 @@ export function History() {
         />
       </div>
 
-      {/* Filters */}
-      <div className="detail-panel section-block">
-        <div className="filter-grid">
-          <label className="filter-field">
-            <span>Vehicle</span>
-            <Select value={groupFilter} onChange={setGroupFilter} options={groupOptions} />
-          </label>
-          <label className="filter-field">
-            <span>Passengers</span>
-            <Select
-              multi
-              value={whoFilter}
-              onChange={setWhoFilter}
-              options={whoOptions}
-              allLabel="Anyone"
-            />
-          </label>
-          <label className="filter-field">
-            <span>From</span>
-            <DatePicker value={from} onChange={setFrom} placeholder="Any" clearable />
-          </label>
-          <label className="filter-field">
-            <span>To</span>
-            <DatePicker value={to} onChange={setTo} placeholder="Any" clearable />
-          </label>
-        </div>
-        {hasFilters && (
-          <button
-            className="link-btn"
-            type="button"
-            style={{ marginTop: "0.6rem" }}
-            onClick={() => {
-              setOwnership("all");
-              setGroupFilter("all");
-              setWhoFilter([]);
-              setFrom("");
-              setTo("");
-            }}
-          >
-            Clear filters
-          </button>
+      {/* Filters - collapsed by default so the list isn't buried under chrome
+          when there's only a handful of fill-ups to search through. */}
+      <div className="section-block">
+        <button
+          type="button"
+          className="filters-toggle"
+          onClick={() => setShowFilters((s) => !s)}
+          aria-expanded={showFilters}
+        >
+          <span>
+            Filters
+            {activeFilterCount > 0 ? (
+              <span className="filters-toggle__count">{activeFilterCount}</span>
+            ) : null}
+          </span>
+          <ChevronDown
+            size={16}
+            className={"filters-toggle__chev" + (showFilters ? " is-open" : "")}
+          />
+        </button>
+        {showFilters && (
+          <div className="detail-panel" style={{ marginTop: "0.6rem" }}>
+            <div className="filter-grid">
+              <label className="filter-field">
+                <span>Vehicle</span>
+                <Select value={groupFilter} onChange={setGroupFilter} options={groupOptions} />
+              </label>
+              <label className="filter-field">
+                <span>Passengers</span>
+                <Select
+                  multi
+                  value={whoFilter}
+                  onChange={setWhoFilter}
+                  options={whoOptions}
+                  allLabel="Anyone"
+                />
+              </label>
+              <label className="filter-field">
+                <span>From</span>
+                <DatePicker value={from} onChange={setFrom} placeholder="Any" clearable />
+              </label>
+              <label className="filter-field">
+                <span>To</span>
+                <DatePicker value={to} onChange={setTo} placeholder="Any" clearable />
+              </label>
+            </div>
+            {hasFilters && (
+              <button
+                className="link-btn"
+                type="button"
+                style={{ marginTop: "0.6rem" }}
+                onClick={() => {
+                  setOwnership("all");
+                  setGroupFilter("all");
+                  setWhoFilter([]);
+                  setFrom("");
+                  setTo("");
+                }}
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -197,18 +227,18 @@ export function History() {
 
       {/* Results */}
       {data.entries.length === 0 ? (
-        <EmptyState emoji="⛽" title="No fill-ups yet">
+        <EmptyState emoji="⛽" title="No refuels yet">
           Tap the + button to log your first fuel entry.
         </EmptyState>
       ) : filtered.length === 0 ? (
         <EmptyState emoji="🔍" title="Nothing matches">
-          No fill-ups match these filters. Try widening the date range or clearing
+          No refuels match these filters. Try widening the date range or clearing
           filters.
         </EmptyState>
       ) : (
         <section className="section-block">
           <p className="muted" style={{ fontSize: "0.76rem", marginBottom: "0.6rem" }}>
-            {filtered.length} fill-up{filtered.length === 1 ? "" : "s"}
+            {filtered.length} refuel{filtered.length === 1 ? "" : "s"}
           </p>
           {filtered.map((e) => (
             <EntryCard
@@ -217,6 +247,7 @@ export function History() {
               payments={payments}
               peopleMap={peopleMap}
               ownedByMe={data.groupOwnedMap.get(e.groupId)}
+              ownerName={personName(groupMap.get(e.groupId)?.ownerPersonId, peopleMap)}
               fallbackTitle={groupMap.get(e.groupId)?.name}
               onlyWho={whoFilter.length > 0 ? whoSet : null}
               onRecordPayment={entryActions.onRecordPayment}

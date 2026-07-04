@@ -1,6 +1,14 @@
 /* CarPawl app styles:
-   Eevery color, radius, shadow and easing pulls from tokens/. New components (nav, sheet, stat cards, list rows,
+   Every color, radius, shadow and easing pulls from tokens/. New components (nav, sheet, stat cards, list rows,
    status badges, toasts, empty states) are of the build spec. */
+
+/* Light-theme contrast fix: the vendored --text-muted/--text-faint tokens sit
+   under WCAG AA's 4.5:1 for body text on a near-white background (~3.4:1 and
+   ~2.9:1 measured). Darkened here rather than in the vendored tokens file. */
+body.light {
+  --text-muted: rgba(28, 28, 28, 0.68);
+  --text-faint: rgba(28, 28, 28, 0.62);
+}
 
 /* --------------------- Base shell + aurora background --------------------- */
 *,
@@ -201,6 +209,45 @@ body.z-body {
     ),
     var(--surface-glass);
 }
+/* High-contrast button (Vehicles "Add"): white in dark mode, dark in light -
+   noticeable without borrowing the FAB's purple accent (#9). */
+.cta-contrast {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-weight: bold;
+  font-size: clamp(0.88rem, 1.3vw, 0.98rem);
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: #fff;
+  color: #1c1c1c;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
+}
+.cta-contrast:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  background: #f0f0f0;
+}
+.cta-contrast:active { transform: translateY(1px) scale(0.97); }
+body.light .cta-contrast {
+  background: #1c1c1c;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+}
+body.light .cta-contrast:hover { background: #333; }
+
+/* Subtle green / red orb for the "to collect" / "to pay" headline cards. */
+.stat-card--collect {
+  background: radial-gradient(circle at 82% 12%, rgba(0, 230, 118, 0.14), transparent 60%),
+    var(--surface-glass);
+}
+.stat-card--pay {
+  background: radial-gradient(circle at 82% 12%, rgba(255, 45, 85, 0.12), transparent 60%),
+    var(--surface-glass);
+}
 .stat-card--wide { grid-column: 1 / -1; }
 .stat-card__label {
   font-size: 0.72rem;
@@ -276,6 +323,36 @@ body.z-body {
   font-size: 0.76rem;
   color: var(--text-muted);
   margin-top: 0.15rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+}
+/* Owner chip on a refuel row: purple when it's your own vehicle, neutral
+   grey when it's a carpool someone else drives (#17). */
+.owner-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.08rem 0.42rem;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: bold;
+  line-height: 1.5;
+  border: 1px solid transparent;
+}
+.owner-chip--mine {
+  background: var(--accent-wash-16);
+  border-color: var(--accent-border-40);
+  color: var(--accent-soft);
+}
+.owner-chip--other {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: var(--text-muted);
+}
+body.light .owner-chip--other {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.12);
 }
 .list-row__trailing {
   flex: 0 0 auto;
@@ -417,6 +494,7 @@ body.z-body {
   margin: 0.6rem 0 0.3rem;
 }
 .empty-state__body { font-size: var(--text-small); margin: 0; }
+.empty-state__action { margin-top: 1rem; }
 
 /* ------------------- Bottom navigation pill (§6) -------------------- */
 .bottom-nav {
@@ -500,7 +578,7 @@ body.light .bottom-nav__pill {
   cursor: pointer;
   box-shadow: var(--shadow-accent);
   transition: transform 0.45s var(--ease-bounce), box-shadow 0.3s ease,
-    background 0.3s ease;
+    background 0.3s ease, opacity 0.2s ease;
 }
 .fab-add:hover {
   transform: translateY(-3px);
@@ -509,6 +587,16 @@ body.light .bottom-nav__pill {
 }
 .fab-add:active { transform: translateY(2px) scale(0.9); }
 .fab-add svg { width: 26px; height: 26px; }
+/* Shrinks on scroll-down so it stops smearing over rows underneath it, and
+   restores on scroll-up or a tap (still tappable while shrunk). */
+.fab-add--scrolling {
+  transform: scale(0.62);
+  opacity: 0.45;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fab-add { transition: opacity 0.2s ease, background 0.3s ease; }
+  .fab-add--scrolling { transform: none; }
+}
 
 /* ------------------- Bottom sheet (§6) - glass panel entering with stackSlideIn. ------------------- */
 .sheet-scrim {
@@ -658,22 +746,27 @@ body.light .bottom-nav__pill {
   box-shadow: var(--shadow-card);
   animation: sheetUp 0.4s var(--ease-out-expo) both;
   pointer-events: auto;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
 }
 .toast[data-state="success"] {
-  background: rgba(0, 230, 118, 0.12);
+  background: rgba(0, 40, 25, 0.82);
   border: 1px solid rgba(0, 230, 118, 0.4);
   color: #34d399;
 }
 .toast[data-state="error"] {
-  background: rgba(255, 23, 68, 0.12);
+  background: rgba(40, 5, 12, 0.82);
   border: 1px solid rgba(255, 23, 68, 0.4);
   color: #ff6b81;
 }
 .toast[data-state="info"] {
-  background: var(--accent-wash-16);
+  background: rgba(30, 12, 46, 0.82);
   border: 1px solid var(--accent-border-40);
   color: var(--accent-soft);
 }
+body.light .toast[data-state="success"] { background: rgba(224, 250, 236, 0.9); }
+body.light .toast[data-state="error"] { background: rgba(255, 232, 235, 0.9); }
+body.light .toast[data-state="info"] { background: rgba(243, 232, 255, 0.9); }
 
 /* ------------ Modal confirm dialog (destructive actions) ------------------- */
 .modal-scrim {
@@ -802,6 +895,133 @@ body.light .bottom-nav__pill {
   margin-bottom: 0.5rem;
 }
 .chart-block__title svg { color: var(--highlight); }
+
+/* Dashboard chart carousel (#18) */
+.chart-carousel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+.chart-carousel__filter { width: 148px; flex: 0 0 auto; }
+.chart-carousel__filter .z-select__trigger { padding: 0.4rem 0.6rem; font-size: 0.72rem; }
+.chart-carousel__track {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.3rem;
+  scrollbar-width: none;
+}
+.chart-carousel__track::-webkit-scrollbar { display: none; }
+.chart-carousel__card {
+  flex: 0 0 min(320px, 82vw);
+  scroll-snap-align: start;
+  background: var(--surface-glass-panel);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow-panel);
+  padding: 0.9rem 0.7rem 0.7rem;
+}
+.chart-carousel__card-title {
+  font-size: 0.78rem;
+  font-weight: bold;
+  color: var(--text-body);
+  margin-bottom: 0.5rem;
+}
+.chart-carousel__dots {
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+}
+.chart-carousel__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  background: var(--border-hairline);
+  cursor: pointer;
+  transition: background 0.25s ease, transform 0.25s ease;
+}
+.chart-carousel__dot.is-active { background: var(--highlight); transform: scale(1.35); }
+
+/* Empty-state filler within a carousel card (#13) */
+.carousel-chart-empty {
+  height: 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.4rem;
+  padding: 0 1rem;
+}
+.carousel-chart-empty__emoji { font-size: 1.6rem; }
+.carousel-chart-empty p { margin: 0; font-size: 0.76rem; color: var(--text-muted); line-height: 1.4; }
+
+/* Hand-rolled month-vs-last-month bars (no charting lib needed for 2 bars) */
+.mvl-chart {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 190px;
+  justify-content: space-between;
+  padding: 0.4rem 0.6rem 0;
+}
+.mvl-chart__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2.2rem;
+  height: 140px;
+  width: 100%;
+  justify-content: center;
+}
+.mvl-chart__col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  height: 100%;
+  justify-content: flex-end;
+}
+.mvl-chart__track {
+  width: 42px;
+  height: 90px;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.mvl-chart__bar {
+  width: 100%;
+  background: var(--text-faint);
+  border-radius: 8px 8px 0 0;
+  transition: height 0.4s var(--ease-out-expo);
+  min-height: 4px;
+}
+.mvl-chart__bar--accent { background: var(--highlight); }
+.mvl-chart__value { font-size: 0.78rem; font-weight: bold; color: var(--text-muted); }
+.mvl-chart__value--big { font-size: 1.05rem; color: var(--text-primary); }
+.mvl-chart__label {
+  font-size: 0.66rem;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mvl-chart__pct {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: bold;
+  font-size: 0.82rem;
+}
 
 /* --------------------- Entry card (expandable fill-up) ------------------------------- */
 .entry-card {
@@ -1114,7 +1334,42 @@ body.light .pax-dist-row__input input {
   color: var(--darkFont);
 }
 
-/* History filters */
+/* History filters - collapsed behind this toggle by default (§ux review). */
+.filters-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.5rem;
+  padding: 0.7rem 0.9rem;
+  background: var(--surface-glass-panel);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: bold;
+  cursor: pointer;
+}
+.filters-toggle__count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  margin-left: 0.4rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--highlight);
+  color: var(--lightFont);
+  font-size: 0.62rem;
+}
+.filters-toggle__chev {
+  color: var(--text-faint);
+  flex: 0 0 auto;
+  transition: transform 0.3s var(--ease-bounce);
+}
+.filters-toggle__chev.is-open { transform: rotate(180deg); color: var(--highlight); }
+
 .filter-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1474,31 +1729,53 @@ body.light .people-row__edit {
 .balance-row--me .balance-row__name { font-weight: bold; }
 
 /* Fuel spend card */
-/* Phones: label on top, period toggle full-width below it - big tap targets,
-   no wrapped button text. Wider screens tuck the toggle back beside the label. */
+/* Small screens: label + a compact cycling pill (top-right). Wider screens swap
+   the pill for the full 3-up glider segment (#10). */
 .fuel-spend-card__head {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
   margin-bottom: 0.1rem;
 }
 .fuel-spend-card__head .segment {
+  display: none;
   padding: 0.2rem;
-  width: 100%;
 }
 .fuel-spend-card__head .segment button {
   font-size: clamp(0.62rem, 2.7vw, 0.7rem);
-  padding: 0.34rem 0.4rem;
+  padding: 0.34rem 0.5rem;
   white-space: nowrap;
 }
+.period-cycle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  padding: 0.36rem 0.7rem;
+  border-radius: 999px;
+  background: var(--accent-wash-12);
+  border: 1px solid var(--accent-border-40);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: bold;
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* Chevron affordance: two lines meeting at a point, one each side. */
+.period-cycle__chev {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  border-right: 1.6px solid var(--highlight);
+  border-bottom: 1.6px solid var(--highlight);
+}
+.period-cycle__chev--l { transform: rotate(135deg); }
+.period-cycle__chev--r { transform: rotate(-45deg); }
 @media (min-width: 440px) {
-  .fuel-spend-card__head {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .fuel-spend-card__head .segment { width: auto; }
+  .fuel-spend-card__head .segment { display: flex; }
+  .period-cycle { display: none; }
 }
 .fuel-spend-card__break {
   display: flex;

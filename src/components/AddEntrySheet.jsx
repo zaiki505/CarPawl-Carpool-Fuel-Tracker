@@ -31,6 +31,7 @@ import {
 import { whoName } from "../lib/names.js";
 import { ME, person as mkPerson, whoKey } from "../lib/identity.js";
 import { useApp } from "../app/AppContext.jsx";
+import { haptic } from "../lib/haptics.js";
 import { Check, Plus, Car, Fuel } from "./ui/Icons.jsx";
 
 /* Add / edit a fill-up (§7.4, math per §4.1). One of {cost, liters, distance}
@@ -247,7 +248,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
     setError("");
     if (!groupId) return setError("Pick a vehicle first.");
     if (!(parseNum(primaryValue) > 0)) {
-      return setError("Enter a cost, liters or distance for this fill-up.");
+      return setError("Enter a cost, liters or distance for this refuel.");
     }
     if (!date) return setError("Pick a date.");
 
@@ -278,7 +279,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
         if (entryPayments.length > 0) {
           const ok = await askConfirm({
             title: "Recalculate balances?",
-            body: "Editing this fill-up changes each passenger's share, so what's still owed gets recalculated. Payments you've already recorded stay exactly as they are.",
+            body: "Editing this refuel changes each passenger's share, so what's still owed gets recalculated. Payments you've already recorded stay exactly as they are.",
             confirmLabel: "Save changes",
           });
           if (!ok) {
@@ -287,10 +288,11 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
           }
         }
         await updateEntry(entryId, payload);
-        toast("Fill-up updated");
+        toast("Refuel updated");
       } else {
         await createEntry(payload);
-        toast("Fill-up saved ⛽");
+        haptic("light");
+        toast("Refuel saved ⛽");
       }
       onClose();
     } catch (e) {
@@ -314,7 +316,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
 
   return (
     <Sheet
-      title={editing ? "Edit fill-up" : "Add a fill-up"}
+      title={editing ? "Edit refuel" : "Add a refuel"}
       onClose={onClose}
       banner={
         group ? (
@@ -341,13 +343,13 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
             onClick={save}
             disabled={busy || !groupId}
           >
-            {editing ? "Save changes" : "Save fill-up"}
+            {editing ? "Save changes" : "Save refuel"}
           </button>
         </>
       }
     >
       {groups.length === 0 ? (
-        <p className="muted">Add a car first, then log a fill-up.</p>
+        <p className="muted">Add a car first, then log a refuel.</p>
       ) : (
         <div className="field-grid">
           <div className="form-section-head">Vehicle</div>
@@ -498,7 +500,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
               label="Split with"
               hint={
                 isOwned
-                  ? "Leave empty for a personal fill-up. Your own driving is never billed."
+                  ? "Leave empty for a personal refuel. Your own driving is never billed."
                   : "Include yourself and everyone riding - just like the driver would."
               }
             >

@@ -7,17 +7,18 @@ import {
   totalYouOwe,
   thisMonthConsumption,
 } from "../lib/calc.js";
-import { formatMoney, formatLiters, monthLabel } from "../lib/format.js";
+import { formatMoney, formatMoneyShort, formatLiters, monthLabel } from "../lib/format.js";
+import { personName } from "../lib/names.js";
 import { StatCard, SectionHead, EmptyState } from "../components/ui/Primitives.jsx";
 import { GroupCard } from "../components/GroupCard.jsx";
 import { EntryCard } from "../components/EntryCard.jsx";
 import { FuelSpendCard } from "../components/FuelSpendCard.jsx";
-import { EfficiencyChart } from "../components/LazyChart.jsx";
-import { Wallet, CircleDollarSign, Fuel, Gauge, TrendingUp } from "../components/ui/Icons.jsx";
+import { ChartCarousel } from "../components/LazyChartCarousel.jsx";
+import { Wallet, CircleDollarSign, Fuel, Gauge } from "../components/ui/Icons.jsx";
 
 export function Dashboard() {
   const data = useAllData();
-  const { openGroup, goTab } = useApp();
+  const { openGroup, goTab, openSheet } = useApp();
   const entryActions = useEntryActions();
 
   if (!data) return <div className="app-shell" />;
@@ -36,9 +37,6 @@ export function Dashboard() {
   const consumption = thisMonthConsumption({ ownedGroups, entriesByGroup });
 
   const recent = entries.slice(0, 4);
-  const ownedWithEntries = ownedGroups.filter(
-    (g) => (entriesByGroup[g.id] || []).length > 0
-  );
 
   return (
     <div className="app-shell stagger">
@@ -52,7 +50,7 @@ export function Dashboard() {
       {/* Headline totals */}
       <div className="stat-grid section-block">
         <StatCard
-          accent
+          tone="collect"
           icon={<Wallet size={13} />}
           label="To collect"
           value={formatMoney(owedToYou)}
@@ -60,6 +58,7 @@ export function Dashboard() {
           hint="across your cars"
         />
         <StatCard
+          tone="pay"
           icon={<CircleDollarSign size={13} />}
           label="To pay"
           value={formatMoney(youOwe)}
@@ -72,7 +71,11 @@ export function Dashboard() {
           icon={<Gauge size={13} />}
           label="Fuel this month"
           value={formatLiters(consumption.liters)}
-          hint={formatMoney(consumption.cost)}
+          hint={
+            consumption.liters > 0
+              ? `${formatMoneyShort(consumption.cost / consumption.liters)}/L avg`
+              : "no refuels yet"
+          }
         />
       </div>
 
@@ -98,10 +101,19 @@ export function Dashboard() {
       </section>
 
       {/* Per-group: Carpools */}
-      {nonOwnedGroups.length > 0 && (
-        <section className="section-block">
-          <SectionHead title="Carpools" />
-          {nonOwnedGroups.map((g) => (
+      <section className="section-block">
+        <SectionHead title="Carpools" />
+        {nonOwnedGroups.length === 0 ? (
+          <EmptyState
+            emoji="🧑‍🤝‍🧑"
+            title="No carpools yet"
+            actionLabel="+ Add a carpool"
+            onAction={() => openSheet({ type: "createGroup" })}
+          >
+            Ride in someone else's car? Track your share of their fuel here.
+          </EmptyState>
+        ) : (
+          nonOwnedGroups.map((g) => (
             <GroupCard
               key={g.id}
               group={g}
@@ -110,36 +122,44 @@ export function Dashboard() {
               peopleMap={peopleMap}
               onOpen={openGroup}
             />
-          ))}
-        </section>
-      )}
+          ))
+        )}
+      </section>
 
-      {/* Efficiency trend per owned group */}
-      {ownedWithEntries.length > 0 && (
-        <section className="section-block">
-          <SectionHead title="Fuel efficiency" />
-          {ownedWithEntries.map((g) => (
-            <div key={g.id} className="chart-block">
-              <div className="chart-block__title">
-                <TrendingUp size={14} /> {g.name}
-              </div>
-              <EfficiencyChart entries={entriesByGroup[g.id]} />
-            </div>
-          ))}
-        </section>
-      )}
+      {/* Chart carousel: cost trend, month vs month, cost by person, refuel frequency */}
+      <section className="section-block">
+        <ChartCarousel
+          ownedGroups={ownedGroups}
+          entriesByGroup={entriesByGroup}
+          peopleMap={peopleMap}
+        />
+      </section>
 
       {/* Recent entries */}
-      {recent.length > 0 && (
-        <section className="section-block">
-          <SectionHead title="Recent fill-ups" action="See all" onAction={() => goTab("history")} />
-          {recent.map((e) => (
+      <section className="section-block">
+        <SectionHead
+          title="Recent refuels"
+          action={recent.length > 0 ? "See all" : undefined}
+          onAction={recent.length > 0 ? () => goTab("history") : undefined}
+        />
+        {recent.length === 0 ? (
+          <EmptyState
+            emoji="⛽"
+            title="No refuels yet"
+            actionLabel="+ Log a refuel"
+            onAction={() => openSheet({ type: "addEntry" })}
+          >
+            Your latest fuel stops show up here once you log one.
+          </EmptyState>
+        ) : (
+          recent.map((e) => (
             <EntryCard
               key={e.id}
               entry={e}
               payments={payments}
               peopleMap={peopleMap}
               ownedByMe={data.groupOwnedMap.get(e.groupId)}
+              ownerName={personName(data.groupMap.get(e.groupId)?.ownerPersonId, peopleMap)}
               fallbackTitle={data.groupMap.get(e.groupId)?.name}
               onRecordPayment={entryActions.onRecordPayment}
               onEditPayment={entryActions.onEditPayment}
@@ -149,9 +169,9 @@ export function Dashboard() {
               onEdit={entryActions.onEditEntry}
               onDelete={entryActions.onDeleteEntry}
             />
-          ))}
-        </section>
-      )}
+          ))
+        )}
+      </section>
     </div>
   );
 }

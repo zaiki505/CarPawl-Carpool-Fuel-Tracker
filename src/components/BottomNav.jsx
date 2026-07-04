@@ -18,6 +18,22 @@ export function BottomNav({ onAdd }) {
   const [indStyle, setIndStyle] = useState(null);
   const [moving, setMoving] = useState(false);
   const firstRender = useRef(true);
+  const [scrolling, setScrolling] = useState(false);
+  const lastY = useRef(0);
+
+  // Shrink the FAB on scroll-down (out of the way of whatever's underneath),
+  // restore on scroll-up. Tapping it (see onClick below) also restores it.
+  useEffect(() => {
+    lastY.current = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      if (y > lastY.current + 2) setScrolling(true);
+      else if (y < lastY.current - 2) setScrolling(false);
+      lastY.current = y;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   useLayoutEffect(() => {
     const el = itemRefs.current[tab];
@@ -49,7 +65,15 @@ export function BottomNav({ onAdd }) {
 
   return (
     <>
-      <button className="fab-add" onClick={onAdd} aria-label="Add fill-up" type="button">
+      <button
+        className={"fab-add" + (scrolling ? " fab-add--scrolling" : "")}
+        onClick={() => {
+          setScrolling(false);
+          onAdd();
+        }}
+        aria-label="Add refuel"
+        type="button"
+      >
         <Plus size={26} />
       </button>
       <nav className="bottom-nav" aria-label="Primary">

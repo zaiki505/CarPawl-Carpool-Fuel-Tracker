@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useSettings, usePeople, useGroups } from "../db/hooks.js";
 import { useApp } from "../app/AppContext.jsx";
 import { updateSettings } from "../db/db.js";
@@ -46,15 +46,22 @@ export function Settings() {
   const { toast, askConfirm } = useApp();
 
   const [theme, setTheme] = useState(getTheme());
-  const [price, setPrice] = useState("");
-  const [maint, setMaint] = useState("");
+  const [price, setPrice] = useState(null);
+  const [maint, setMaint] = useState(null);
   const [newPerson, setNewPerson] = useState("");
   const [showCat, setShowCat] = useState(false);
   const fileRef = useRef(null);
 
+  // Seed the editable fields once from settings. Using null (not "") as the
+  // "not seeded yet" marker means clearing the field back to empty sticks -
+  // an empty string won't get re-filled on the next render (#14).
+  useEffect(() => {
+    if (!settings) return;
+    setPrice((p) => (p == null ? String(settings.defaultFuelPricePerLiter) : p));
+    setMaint((m) => (m == null ? String(settings.defaultMaintenancePct ?? 10) : m));
+  }, [settings]);
+
   if (!settings) return <div className="app-shell" />;
-  if (price === "") setPrice(String(settings.defaultFuelPricePerLiter));
-  if (maint === "") setMaint(String(settings.defaultMaintenancePct ?? 10));
 
   const archivedPeople = allPeople.filter((p) => p.isArchived && !p.cleared);
   const archivedGroups = allGroups.filter((g) => g.isArchived && !g.cleared);
@@ -132,7 +139,7 @@ export function Settings() {
   async function onClearArchivedGroup(g) {
     const ok = await askConfirm({
       title: `Clear ${g.name} from the list?`,
-      body: "It'll disappear from Archived for good. Its past fill-ups and all your totals stay exactly as they are - only a tiny name record is kept so history still reads correctly.",
+      body: "It'll disappear from Archived for good. Its past refuels and all your totals stay exactly as they are - only a tiny name record is kept so history still reads correctly.",
       confirmLabel: "Clear from list",
       danger: true,
     });
@@ -144,7 +151,7 @@ export function Settings() {
   async function onClearArchivedPerson(p) {
     const ok = await askConfirm({
       title: `Clear ${p.name} from the list?`,
-      body: "They'll disappear from Archived for good. Their past fill-ups and all your totals stay exactly as they are - only a tiny name record is kept so history still reads correctly.",
+      body: "They'll disappear from Archived for good. Their past refuels and all your totals stay exactly as they are - only a tiny name record is kept so history still reads correctly.",
       confirmLabel: "Clear from list",
       danger: true,
     });
@@ -156,7 +163,7 @@ export function Settings() {
   async function onPermaDeleteGroup(g) {
     const ok = await askConfirm({
       title: `Delete ${g.name} forever?`,
-      body: "This removes it AND every fill-up and payment under it, permanently. Historical totals will change. This cannot be undone.",
+      body: "This removes it AND every refuel and payment under it, permanently. Historical totals will change. This cannot be undone.",
       confirmLabel: "Delete forever",
       danger: true,
     });
@@ -168,7 +175,7 @@ export function Settings() {
   async function onPermaDeletePerson(p) {
     const ok = await askConfirm({
       title: `Delete ${p.name} forever?`,
-      body: "This removes them from every fill-up, deletes their payments, and permanently deletes any carpool they own (with its fill-ups). Historical totals will change. This cannot be undone.",
+      body: "This removes them from every refuel, deletes their payments, and permanently deletes any carpool they own (with its refuels). Historical totals will change. This cannot be undone.",
       confirmLabel: "Delete forever",
       danger: true,
     });
@@ -180,7 +187,7 @@ export function Settings() {
   async function onClearAll() {
     const first = await askConfirm({
       title: "Erase everything on this device?",
-      body: "This permanently deletes ALL your cars, carpools, people, fill-ups and payments. Export a JSON backup first if there's any chance you'll want it back.",
+      body: "This permanently deletes ALL your cars, carpools, people, refuels and payments. Export a JSON backup first if there's any chance you'll want it back.",
       confirmLabel: "Continue",
       cancelLabel: "Keep my data",
       danger: true,
@@ -188,7 +195,7 @@ export function Settings() {
     if (!first) return;
     const second = await askConfirm({
       title: "Are you absolutely sure?",
-      body: "There is no undo. The moment you confirm, every last fill-up and payment is gone.",
+      body: "There is no undo. The moment you confirm, every last refuel and payment is gone.",
       confirmLabel: "Yes, delete everything",
       cancelLabel: "No, stop",
       danger: true,
@@ -221,14 +228,14 @@ export function Settings() {
     const d = backup.data;
     const ok = await askConfirm({
       title: "Replace everything with this backup?",
-      body: `This wipes what's on this device and restores ${d.people.length} people, ${d.groups.length} groups, ${d.entries.length} fill-ups and ${d.payments.length} payments from the file. This can't be undone.`,
+      body: `This wipes what's on this device and restores ${d.people.length} people, ${d.groups.length} groups, ${d.entries.length} refuels and ${d.payments.length} payments from the file. This can't be undone.`,
       confirmLabel: "Restore & replace",
       danger: true,
     });
     if (!ok) return;
     try {
       const summary = await restoreFromBackup(backup);
-      toast(`Restored ${summary.entries} fill-ups from backup ✅`);
+      toast(`Restored ${summary.entries} refuels from backup ✅`);
     } catch (err) {
       toast(err.message, "error");
     }
@@ -270,7 +277,7 @@ export function Settings() {
         <div className="detail-panel field-grid">
           <Field
             label="Default fuel price (RM/L)"
-            hint="Used for new fill-ups. Each entry can still override its own price."
+            hint="Used for new refuels. Each entry can still override its own price."
           >
             <div className="field-inline" style={{ gridTemplateColumns: "1fr auto" }}>
               <input
@@ -278,7 +285,7 @@ export function Settings() {
                 inputMode="decimal"
                 min="0"
                 step="0.01"
-                value={price}
+                value={price ?? ""}
                 onChange={(e) => setPrice(e.target.value)}
               />
               <button className="action-btn" type="button" onClick={savePrice}>
@@ -331,7 +338,7 @@ export function Settings() {
           </Field>
           <Field
             label="Maintenance markup (%)"
-            hint="Added on top of fuel + tolls + parking for Driver Compensation splits. Each fill-up can override it."
+            hint="Added on top of fuel + tolls + parking for Driver Compensation splits. Each refuel can override it."
           >
             <div className="field-inline" style={{ gridTemplateColumns: "1fr auto" }}>
               <input
@@ -339,7 +346,7 @@ export function Settings() {
                 inputMode="decimal"
                 min="0"
                 step="1"
-                value={maint}
+                value={maint ?? ""}
                 onChange={(e) => setMaint(e.target.value)}
               />
               <button className="action-btn" type="button" onClick={saveMaint}>
@@ -384,7 +391,7 @@ export function Settings() {
           {activePeople.length === 0 ? (
             <p className="field-hint" style={{ marginTop: "0.8rem" }}>
               No people yet. Add carpool passengers here, or on the fly when logging a
-              fill-up.
+              refuel.
             </p>
           ) : (
             <div className="people-list">
@@ -521,7 +528,7 @@ export function Settings() {
         {(clearedGroups.length > 0 || clearedPeople.length > 0) && (
           <div className="detail-panel" style={{ marginBottom: "0.8rem" }}>
             <p className="field-hint" style={{ marginTop: 0 }}>
-              Cleared items. Deleting permanently also removes their fill-ups /
+              Cleared items. Deleting permanently also removes their refuels /
               payments and changes historical totals.
             </p>
             <div className="people-list">
@@ -559,7 +566,7 @@ export function Settings() {
 
         <div className="detail-panel">
           <p className="field-hint" style={{ marginTop: 0 }}>
-            Permanently erase every car, carpool, person, fill-up and payment on
+            Permanently erase every car, carpool, person, refuel and payment on
             this device. Export a backup first - this cannot be undone.
           </p>
           <button

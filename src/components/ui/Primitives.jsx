@@ -3,13 +3,14 @@ import React from "react";
 /* Small building blocks composed from the token classes in app.css. Kept
    presentational - no data logic. */
 
-export function StatCard({ label, icon, value, valueClass = "", hint, wide, accent }) {
+export function StatCard({ label, icon, value, valueClass = "", hint, wide, accent, tone }) {
   return (
     <div
       className={
         "stat-card" +
         (wide ? " stat-card--wide" : "") +
-        (accent ? " stat-card--accent" : "")
+        (accent ? " stat-card--accent" : "") +
+        (tone ? " stat-card--" + tone : "")
       }
     >
       <span className="stat-card__label">
@@ -35,12 +36,21 @@ export function StatusBadge({ status, label }) {
   );
 }
 
-export function EmptyState({ emoji = "🐾", title, children }) {
+export function EmptyState({ emoji = "🐾", title, children, actionLabel, onAction }) {
   return (
     <div className="empty-state">
       <div className="empty-state__emoji">{emoji}</div>
       {title && <p className="empty-state__title">{title}</p>}
       {children && <p className="empty-state__body">{children}</p>}
+      {actionLabel && onAction && (
+        <button
+          className="cta-secondary empty-state__action"
+          type="button"
+          onClick={onAction}
+        >
+          {actionLabel}
+        </button>
+      )}
     </div>
   );
 }
