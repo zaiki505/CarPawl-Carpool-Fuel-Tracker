@@ -81,6 +81,7 @@ export function AppFrame() {
           who={sheet.who}
           payment={sheet.payment}
           peopleMap={peopleMap}
+          ownedByMe={sheet.ownedByMe}
           onClose={closeSheet}
         />
       )}
@@ -89,6 +90,7 @@ export function AppFrame() {
         <AddEntrySheet
           entryId={sheet.entryId}
           preselectGroupId={sheet.groupId}
+          duplicateOf={sheet.duplicateOf}
           onClose={closeSheet}
         />
       )}

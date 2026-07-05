@@ -14,6 +14,7 @@ export {
   Plus,
   Trash2,
   Pencil,
+  Copy,
   Check,
   X,
   Upload,

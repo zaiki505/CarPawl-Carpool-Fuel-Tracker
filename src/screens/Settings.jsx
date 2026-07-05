@@ -338,7 +338,7 @@ export function Settings() {
           </Field>
           <Field
             label="Maintenance markup (%)"
-            hint="Added on top of fuel + tolls + parking for Driver Compensation splits. Each refuel can override it."
+            hint="Added on top of fuel + parking for Reimbursement splits. Each refuel can override it."
           >
             <div className="field-inline" style={{ gridTemplateColumns: "1fr auto" }}>
               <input
@@ -596,7 +596,7 @@ export function Settings() {
           </div>
         )}
         <p className="faint" style={{ fontSize: "0.68rem" }}>
-          v0.1.0 · made with the Zaiki design system
+          v0.2.0 · Made by Zaiki
         </p>
       </div>
     </div>

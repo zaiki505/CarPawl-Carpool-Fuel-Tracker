@@ -107,6 +107,10 @@ export function History() {
     Boolean(to),
   ].filter(Boolean).length;
   const hasFilters = ownership !== "all" || activeFilterCount > 0;
+  // "Carpools" filter -> "trip"; "All"/"My Vehicles" default to "refuel" (a
+  // mixed "All" list can't be exactly right either way, so it keeps the
+  // owned-side default per the established convention).
+  const entryNoun = ownership === "carpool" ? "trip" : "refuel";
 
   return (
     <div className="app-shell stagger">
@@ -232,13 +236,13 @@ export function History() {
         </EmptyState>
       ) : filtered.length === 0 ? (
         <EmptyState emoji="🔍" title="Nothing matches">
-          No refuels match these filters. Try widening the date range or clearing
+          No {entryNoun}s match these filters. Try widening the date range or clearing
           filters.
         </EmptyState>
       ) : (
         <section className="section-block">
           <p className="muted" style={{ fontSize: "0.76rem", marginBottom: "0.6rem" }}>
-            {filtered.length} refuel{filtered.length === 1 ? "" : "s"}
+            {filtered.length} {entryNoun}{filtered.length === 1 ? "" : "s"}
           </p>
           {filtered.map((e) => (
             <EntryCard
@@ -256,6 +260,7 @@ export function History() {
               onQuickSettle={entryActions.onQuickSettle}
               onClearPayments={entryActions.onClearPayments}
               onEdit={entryActions.onEditEntry}
+              onDuplicate={entryActions.onDuplicateEntry}
               onDelete={entryActions.onDeleteEntry}
             />
           ))}

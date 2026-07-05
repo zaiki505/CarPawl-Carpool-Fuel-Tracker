@@ -74,6 +74,14 @@ export function FuelSpendCard({ entries, groupOwnedMap }) {
             {Math.abs(trend.percentChange)}% vs last{" "}
             {period === "week" ? "week" : "month"}
           </span>
+        ) : period === "all" ? (
+          // "All Time" has no possible previous period to diff against - that's
+          // structural, not "no history yet", so it gets its own framing
+          // instead of the new-user fun message (which would be misleading for
+          // someone with years of fill-ups logged).
+          <span className="faint" style={{ fontStyle: "italic" }}>
+            Since your very first refuel.
+          </span>
         ) : (
           <span className="faint" style={{ fontStyle: "italic" }}>
             {funMsg}

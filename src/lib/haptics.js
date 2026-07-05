@@ -1,13 +1,10 @@
 /* Tiny haptics helper for major interactions only (add/delete, celebrate, cat).
-   Uses the Vibration API, which only Android Chrome honours - it's a silent
-   no-op on iOS Safari and desktop, so calling it anywhere is always safe.
-   Respects prefers-reduced-motion. */
+   Uses the Vibration API, which only Chromium-on-Android honours - it's a
+   silent no-op on iOS Safari and desktop, so calling it anywhere is always
+   safe. */
 
 function canVibrate() {
-  if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function")
-    return false;
-  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return false;
-  return true;
+  return typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
 }
 
 const PATTERNS = {

@@ -3,7 +3,7 @@ import { formatMoney } from "../../lib/format.js";
 import { TrendingUp, TrendingDown } from "../ui/Icons.jsx";
 import { EmptyChart } from "./EmptyChart.jsx";
 
-/* Card 2: two-bar comparison + a large, instantly-readable % change. Hand-rolled
+/* Card 2: two-bar comparison + a large % change. Hand-rolled
    (not Recharts) - two bars and a number don't need a charting library. */
 export function MonthVsLastMonthChart({ data }) {
   const { thisMonth, lastMonth, pctChange } = data;

@@ -10,11 +10,11 @@ import { haptic } from "../lib/haptics.js";
 export function useEntryActions() {
   const { openSheet, askConfirm, toast } = useApp();
 
-  const onRecordPayment = (entry, who) =>
-    openSheet({ type: "payment", entry, who });
+  const onRecordPayment = (entry, who, ownedByMe) =>
+    openSheet({ type: "payment", entry, who, ownedByMe });
 
-  const onEditPayment = (entry, payment) =>
-    openSheet({ type: "payment", entry, who: payment.who, payment });
+  const onEditPayment = (entry, payment, ownedByMe) =>
+    openSheet({ type: "payment", entry, who: payment.who, payment, ownedByMe });
 
   const onDeletePayment = async (entry, payment) => {
     const ok = await askConfirm({
@@ -24,8 +24,8 @@ export function useEntryActions() {
       danger: true,
     });
     if (!ok) return;
+    haptic("medium"); // fire on the confirming tap, not after the DB write
     await removePayment(payment.id);
-    haptic("medium");
     toast("Payment deleted");
   };
 
@@ -48,24 +48,30 @@ export function useEntryActions() {
   // fill-up in one shot. The X is the confirm, so no extra modal here.
   const onClearPayments = async (entry, who, paymentIds) => {
     if (!paymentIds?.length) return;
-    await clearPayments(paymentIds);
     haptic("medium");
+    await clearPayments(paymentIds);
     toast("Payments cleared");
   };
 
   const onEditEntry = (entry) => openSheet({ type: "addEntry", entryId: entry.id });
 
-  const onDeleteEntry = async (entry) => {
+  // Duplicate: open a fresh Add sheet pre-filled from this entry (today's date,
+  // no payments carried over).
+  const onDuplicateEntry = (entry) =>
+    openSheet({ type: "addEntry", duplicateOf: entry });
+
+  const onDeleteEntry = async (entry, ownedByMe) => {
+    const noun = ownedByMe ? "refuel" : "trip";
     const ok = await askConfirm({
-      title: "Delete this refuel?",
+      title: `Delete this ${noun}?`,
       body: "This removes the entry and any payments recorded against it. This can't be undone.",
       confirmLabel: "Delete",
       danger: true,
     });
     if (!ok) return;
-    await removeEntry(entry.id);
     haptic("medium");
-    toast("Refuel deleted");
+    await removeEntry(entry.id);
+    toast(`${ownedByMe ? "Refuel" : "Trip"} deleted`);
   };
 
   return {
@@ -75,6 +81,7 @@ export function useEntryActions() {
     onQuickSettle,
     onClearPayments,
     onEditEntry,
+    onDuplicateEntry,
     onDeleteEntry,
   };
 }

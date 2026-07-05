@@ -9,7 +9,7 @@ const ITEMS = [
   { key: "settings", label: "Settings", Icon: Settings },
 ];
 
-/* Bottom-fixed floating nav pill (§6) - adapts the source's top nav pill: glass,
+/* Bottom-fixed floating nav pill (6) - adapts the source's top nav pill: glass,
    pill radius, and a gliding squish-stretch active indicator that travels
    between items. A separate circular Add-Entry FAB floats above it. */
 export function BottomNav({ onAdd }) {

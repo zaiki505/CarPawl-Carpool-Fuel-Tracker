@@ -15,7 +15,6 @@ import { createEntry, updateEntry, createPerson } from "../db/actions.js";
 import {
   deriveEntryTotals,
   shareOfRow,
-  driverCompBase,
   entryTotalBillable,
   share,
 } from "../lib/calc.js";
@@ -34,15 +33,16 @@ import { useApp } from "../app/AppContext.jsx";
 import { haptic } from "../lib/haptics.js";
 import { Check, Plus, Car, Fuel } from "./ui/Icons.jsx";
 
-/* Add / edit a fill-up (§7.4, math per §4.1). One of {cost, liters, distance}
+/* Add / edit a fill-up (7.4, math per 4.1). One of {cost, liters, distance}
    is the primary input; the other two derive from the group's km/L and the
    entry's fuel price. An optional second real value makes efficiency measured.
    Passengers are picked individually (zero allowed for a personal log); each
    gets a distance defaulting to the full trip, shortenable for early drop-off.
    Edit mode warns before recalculating balances and blocks removing a
-   passenger who already has payments (§8). */
-export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
+   passenger who already has payments (8). */
+export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose }) {
   const editing = Boolean(entryId);
+  const duplicating = Boolean(duplicateOf) && !editing;
   const groups = useGroups() || [];
   const people = usePeople() || [];
   const peopleMap = usePeopleMap();
@@ -73,8 +73,14 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
   const [primaryValue, setPrimaryValue] = useState("");
   const [fuelPrice, setFuelPrice] = useState("");
   const [secondValue, setSecondValue] = useState("");
-  // passengers: { who, distance, custom } - custom tracks manual distance edits
+  // passengers: { who, distance, custom, override } - custom tracks manual
+  // distance edits, override is a string ("" = auto-split, Compensate only)
   const [passengers, setPassengers] = useState([]);
+  // Who was present for tolls (Compensate). null = not customized yet, so
+  // every currently-selected passenger counts as present (see
+  // tollsPresentDisplaySet below) - same "materialize on first edit" idiom as
+  // passenger.custom for distance.
+  const [tollsPresentKeys, setTollsPresentKeys] = useState(null);
   const [date, setDate] = useState(todayISODate());
   const [title, setTitle] = useState("");
   const [showAllPeople, setShowAllPeople] = useState(false);
@@ -87,41 +93,50 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
   const [parking, setParking] = useState("");
   const [maintenancePct, setMaintenancePct] = useState("");
 
-  // One-time initialisation once data is available.
+  // One-time initialisation once data is available. `src` seeds both edit mode
+  // (from the loaded entry) and duplicate mode (from the passed-in entry). A
+  // duplicate is a brand-new entry, so it keeps everything but the date (today)
+  // and never copies payments.
+  const src = editing ? existing : duplicating ? duplicateOf : null;
   if (!ready && settings) {
-    if (editing) {
-      if (existing) {
-        setGroupId(existing.groupId);
-        // Reconstruct as "cost primary" using the stored real numbers; the
-        // stored totals are authoritative so we prime the primary as cost and
-        // keep liters/distance measured via the second value where applicable.
-        setPrimaryField("cost");
-        setPrimaryValue(String(round2(existing.totalCost)));
-        setFuelPrice(String(existing.fuelPricePerLiter));
-        setSecondValue(
-          existing.hasMeasuredEfficiency ? String(round2(existing.totalDistance)) : ""
-        );
-        setPassengers(
-          (existing.passengers || []).map((p) => ({
-            who: p.who,
-            distance: String(round2(p.distanceAssigned)),
-            custom: true,
-          }))
-        );
-        setSplitMethod(existing.splitMethod || "distance");
-        setTolls(existing.tolls ? String(existing.tolls) : "");
-        setParking(existing.parking ? String(existing.parking) : "");
-        setMaintenancePct(
-          existing.maintenancePct != null
-            ? String(existing.maintenancePct)
-            : String(settings.defaultMaintenancePct ?? 10)
-        );
-        setDate(existing.date);
-        setTitle(existing.title || "");
-        setReady(true);
-      }
+    if (src) {
+      setGroupId(src.groupId);
+      // Reconstruct as "cost primary" using the stored real numbers; the stored
+      // totals are authoritative so we prime the primary as cost and keep
+      // liters/distance measured via the second value where applicable.
+      setPrimaryField("cost");
+      setPrimaryValue(String(round2(src.totalCost)));
+      setFuelPrice(String(src.fuelPricePerLiter));
+      setSecondValue(
+        src.hasMeasuredEfficiency ? String(round2(src.totalDistance)) : ""
+      );
+      setPassengers(
+        (src.passengers || []).map((p) => ({
+          who: p.who,
+          distance: String(round2(p.distanceAssigned)),
+          custom: true,
+          override: p.manualOverride != null ? String(p.manualOverride) : "",
+        }))
+      );
+      setTollsPresentKeys(
+        src.tollsPresentWho ? new Set(src.tollsPresentWho.map(whoKey)) : null
+      );
+      setSplitMethod(src.splitMethod || "distance");
+      setTolls(src.tolls ? String(src.tolls) : "");
+      setParking(src.parking ? String(src.parking) : "");
+      setMaintenancePct(
+        src.maintenancePct != null
+          ? String(src.maintenancePct)
+          : String(settings.defaultMaintenancePct ?? 10)
+      );
+      setDate(editing ? src.date : todayISODate());
+      setTitle(src.title || "");
+      setReady(true);
+    } else if (editing) {
+      // still waiting for the entry to load - leave ready=false
     } else {
-      // Pre-select the vehicle when opened from its page (§16), else most recent.
+      // Fresh entry. Pre-select the vehicle when opened from its page (16),
+      // else most recent.
       const preselect =
         preselectGroupId && groups.some((g) => g.id === preselectGroupId)
           ? preselectGroupId
@@ -163,6 +178,11 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
   const isDistance = splitMethod === "distance";
   const isDriverComp = splitMethod === "driver_comp";
 
+  // Effective "present for tolls" set for rendering - defaults to everyone
+  // currently selected until the picker's been touched.
+  const tollsPresentDisplaySet =
+    tollsPresentKeys ?? new Set(syncedPassengers.map((p) => whoKey(p.who)));
+
   // A live entry-shaped object so we can preview each rider's share per method.
   const previewEntry = {
     totalCost: totals.totalCost,
@@ -171,12 +191,16 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
     tolls: parseNum(tolls) || 0,
     parking: parseNum(parking) || 0,
     maintenancePct: parseNum(maintenancePct) || 0,
+    tollsPresentWho: tollsPresentKeys
+      ? syncedPassengers.filter((p) => tollsPresentKeys.has(whoKey(p.who))).map((p) => p.who)
+      : null,
     passengers: syncedPassengers.map((p) => ({
       who: p.who,
       distanceAssigned: parseNum(p.distance) || 0,
+      manualOverride: p.override !== "" && p.override != null ? parseNum(p.override) : null,
     })),
   };
-  // Banner figure (§10): in your own vehicle, what you'll collect from
+  // Banner figure (10): in your own vehicle, what you'll collect from
   // passengers (incl tolls/parking/maintenance); in a carpool, your own share.
   const bannerAmount = isOwned
     ? entryTotalBillable(previewEntry, { excludeMe: true })
@@ -196,7 +220,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
   const candidates = useMemo(() => {
     const list = [];
     // "Me" is selectable in any vehicle now. In your own vehicle your share is
-    // tracked for reference but never owed to you (§18 update).
+    // tracked for reference but never owed to you (18 update).
     if (group) list.push(ME);
     for (const p of people) list.push(mkPerson(p.id));
     return list;
@@ -212,9 +236,18 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
       if (prev.some((p) => whoKey(p.who) === key)) {
         return prev.filter((p) => whoKey(p.who) !== key);
       }
+      // Brand-new entries pick up this carpool's saved default override for
+      // this person, if one's been set; editing an existing entry never does
+      // (its own stored value already won above, in the init block).
+      const savedDefault = !editing && group?.overrideDefaults?.[key];
       return [
         ...prev,
-        { who, distance: totalDistance ? String(round2(totalDistance)) : "", custom: false },
+        {
+          who,
+          distance: totalDistance ? String(round2(totalDistance)) : "",
+          custom: false,
+          override: savedDefault ? String(savedDefault) : "",
+        },
       ];
     });
   }
@@ -225,6 +258,23 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
         whoKey(p.who) === key ? { ...p, distance: value, custom: true } : p
       )
     );
+  }
+
+  function setPassengerOverride(key, value) {
+    setPassengers((prev) =>
+      prev.map((p) => (whoKey(p.who) === key ? { ...p, override: value } : p))
+    );
+  }
+
+  function toggleTollsPresent(who) {
+    const key = whoKey(who);
+    setTollsPresentKeys((prev) => {
+      const base = prev ?? new Set(syncedPassengers.map((p) => whoKey(p.who)));
+      const next = new Set(base);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   }
 
   async function addPerson() {
@@ -248,13 +298,15 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
     setError("");
     if (!groupId) return setError("Pick a vehicle first.");
     if (!(parseNum(primaryValue) > 0)) {
-      return setError("Enter a cost, liters or distance for this refuel.");
+      return setError(`Enter a cost, liters or distance for this ${isOwned ? "refuel" : "trip"}.`);
     }
     if (!date) return setError("Pick a date.");
 
     const payloadPassengers = syncedPassengers.map((p) => ({
       who: p.who,
       distanceAssigned: parseNum(p.distance) || 0,
+      manualOverride:
+        isDriverComp && p.override !== "" && p.override != null ? parseNum(p.override) : null,
     }));
 
     const payload = {
@@ -270,6 +322,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
       tolls: isDriverComp ? parseNum(tolls) || 0 : 0,
       parking: isDriverComp ? parseNum(parking) || 0 : 0,
       maintenancePct: isDriverComp ? parseNum(maintenancePct) || 0 : 0,
+      tollsPresentWho: isDriverComp ? previewEntry.tollsPresentWho : null,
       passengers: payloadPassengers,
     };
 
@@ -279,7 +332,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
         if (entryPayments.length > 0) {
           const ok = await askConfirm({
             title: "Recalculate balances?",
-            body: "Editing this refuel changes each passenger's share, so what's still owed gets recalculated. Payments you've already recorded stay exactly as they are.",
+            body: `Editing this ${isOwned ? "refuel" : "trip"} changes each passenger's share, so what's still owed gets recalculated. Payments you've already recorded stay exactly as they are.`,
             confirmLabel: "Save changes",
           });
           if (!ok) {
@@ -288,15 +341,15 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
           }
         }
         await updateEntry(entryId, payload);
-        toast("Refuel updated");
+        toast(`${isOwned ? "Refuel" : "Trip"} updated`);
       } else {
         await createEntry(payload);
         haptic("light");
-        toast("Refuel saved ⛽");
+        toast(`${isOwned ? "Refuel" : "Trip"} saved ⛽`);
       }
       onClose();
     } catch (e) {
-      // §8: blocked passenger removal comes back with a clear message.
+      // 8: blocked passenger removal comes back with a clear message.
       setError(e.message);
       setBusy(false);
     }
@@ -316,7 +369,13 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
 
   return (
     <Sheet
-      title={editing ? "Edit refuel" : "Add a refuel"}
+      title={
+        editing
+          ? isOwned ? "Edit refuel" : "Edit trip"
+          : duplicating
+          ? isOwned ? "Duplicate refuel" : "Duplicate trip"
+          : isOwned ? "Add a refuel" : "Add a trip"
+      }
       onClose={onClose}
       banner={
         group ? (
@@ -343,7 +402,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
             onClick={save}
             disabled={busy || !groupId}
           >
-            {editing ? "Save changes" : "Save refuel"}
+            {editing ? "Save changes" : isOwned ? "Save refuel" : "Save trip"}
           </button>
         </>
       }
@@ -501,7 +560,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
               hint={
                 isOwned
                   ? "Leave empty for a personal refuel. Your own driving is never billed."
-                  : "Include yourself and everyone riding - just like the driver would."
+                  : "Include yourself and everyone riding together in the trip."
               }
             >
               <div className="chip-wrap">
@@ -588,28 +647,83 @@ export function AddEntrySheet({ entryId, preselectGroupId, onClose }) {
             </div>
           )}
 
-          {/* Equal / driver-comp: show each rider's equal share */}
+          {/* Equal / Compensate: show each rider's share */}
           {!isDistance && syncedPassengers.length > 0 && (
             <div className="pax-dist-list">
               {isDriverComp && (
                 <div className="field-hint" style={{ marginTop: 0 }}>
-                  Billable to passengers: {formatMoney(driverCompBase(previewEntry))} (fuel
-                  + tolls + parking + {parseNum(maintenancePct) || 0}% maintenance)
+                  Billable to passengers: {formatMoney(entryTotalBillable(previewEntry))} (fuel +
+                  parking + {parseNum(maintenancePct) || 0}% maintenance, plus tolls split among
+                  who was present)
                 </div>
               )}
-              {syncedPassengers.map((p) => (
-                <div className="pax-dist-row" key={whoKey(p.who)}>
-                  <span className="pax-dist-row__name">{whoName(p.who, peopleMap)}</span>
-                  <span className="accent-text" style={{ fontWeight: "bold", fontSize: "0.85rem" }}>
-                    {formatMoney(
-                      shareOfRow(previewEntry, {
-                        who: p.who,
-                        distanceAssigned: parseNum(p.distance) || 0,
-                      })
+
+              {isDriverComp && parseNum(tolls) > 0 && (
+                <Field
+                  label="Who was present for tolls?"
+                  hint="Unchecked riders owe nothing toward tolls."
+                >
+                  <div className="chip-wrap">
+                    {syncedPassengers.map((p) => {
+                      const key = whoKey(p.who);
+                      const present = tollsPresentDisplaySet.has(key);
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          className="pick-chip"
+                          aria-pressed={present}
+                          onClick={() => toggleTollsPresent(p.who)}
+                        >
+                          {present && <Check size={13} />}
+                          {whoName(p.who, peopleMap)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Field>
+              )}
+
+              {syncedPassengers.map((p) => {
+                const key = whoKey(p.who);
+                const overrideNum =
+                  p.override !== "" && p.override != null ? parseNum(p.override) : null;
+                const finalShare = shareOfRow(previewEntry, {
+                  who: p.who,
+                  distanceAssigned: parseNum(p.distance) || 0,
+                  manualOverride: overrideNum,
+                });
+                return (
+                  <div className="pax-dist-row" key={key}>
+                    <span className="pax-dist-row__name">
+                      {whoName(p.who, peopleMap)}
+                      {isDriverComp && (
+                        <span className="faint" style={{ fontWeight: "normal" }}>
+                          {" "}
+                          · {formatMoney(finalShare)}
+                        </span>
+                      )}
+                    </span>
+                    {isDriverComp ? (
+                      <div className="pax-dist-row__input">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min="0"
+                          step="0.01"
+                          placeholder="Auto"
+                          value={p.override}
+                          onChange={(e) => setPassengerOverride(key, e.target.value)}
+                        />
+                      </div>
+                    ) : (
+                      <span className="accent-text" style={{ fontWeight: "bold", fontSize: "0.85rem" }}>
+                        {formatMoney(finalShare)}
+                      </span>
                     )}
-                  </span>
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           )}
 

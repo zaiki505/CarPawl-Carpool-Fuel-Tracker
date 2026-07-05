@@ -23,7 +23,7 @@ export function GroupCard({ group, entries, payments, peopleMap, onOpen }) {
     amount = b.owed;
     credit = b.credit;
   }
-  const label = amount > 0 ? (isOwned ? "to collect" : "to pay") : "settled";
+  const label = amount > 0 ? (isOwned ? "to collect" : "to pay") : "Settled";
 
   return (
     <button className="list-row" type="button" onClick={() => onOpen(group.id)}>
@@ -52,7 +52,7 @@ export function GroupCard({ group, entries, payments, peopleMap, onOpen }) {
           </span>
         ) : (
           <span className="faint" style={{ fontSize: "0.8rem" }}>
-            settled
+            {formatMoney(0)}
           </span>
         )}
         <span className="faint" style={{ fontSize: "0.64rem" }}>

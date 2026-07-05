@@ -354,6 +354,22 @@ body.light .owner-chip--other {
   background: rgba(0, 0, 0, 0.05);
   border-color: rgba(0, 0, 0, 0.12);
 }
+
+/* Vehicle form: icon+text inside the Mine / Someone-else's toggle, and a
+   distinct callout that visually separates the owner field from the car
+   name so they don't get mixed up (ux). */
+.seg-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.owner-callout {
+  border: 1px solid var(--accent-border-40);
+  background: var(--accent-wash-06);
+  border-radius: var(--radius-panel);
+  padding: 0.85rem 0.85rem 0.7rem;
+}
+.owner-callout .z-field { margin: 0; }
 .list-row__trailing {
   flex: 0 0 auto;
   text-align: right;
@@ -413,9 +429,9 @@ body.light .owner-chip--other {
   flex-wrap: wrap;
 }
 .btn-block { width: 100%; justify-content: center; }
-/* Red buttons carry a bright red glow, never a purple one (#17). */
+/* Red buttons carry a bright red glow */
 .btn-danger {
-  background: rgba(255, 23, 68, 0.12);
+  background: rgba(255, 23, 68, 0.12) !important;
   border: 1px solid rgba(255, 23, 68, 0.4);
   color: #ff6b81;
   box-shadow: 0 4px 18px rgba(255, 23, 68, 0.28) !important;
@@ -423,11 +439,12 @@ body.light .owner-chip--other {
 .btn-danger:hover {
   background: rgba(255, 23, 68, 0.2);
   transform: translateY(-2px);
+  color: #ff6b81;
   box-shadow: 0 8px 26px rgba(255, 23, 68, 0.45) !important;
 }
 /* Solid red confirm button (overrides the purple cta-primary glow). */
 .cta-primary.btn-danger {
-  background: #ff2d55;
+  background: #ff2d55!important;
   border-color: #ff2d55;
   color: #fff;
   box-shadow: 0 4px 20px rgba(255, 23, 68, 0.5) !important;
@@ -496,7 +513,7 @@ body.light .owner-chip--other {
 .empty-state__body { font-size: var(--text-small); margin: 0; }
 .empty-state__action { margin-top: 1rem; }
 
-/* ------------------- Bottom navigation pill (§6) -------------------- */
+/* ------------------- Bottom navigation pill (6) -------------------- */
 .bottom-nav {
   position: fixed;
   left: 50%;
@@ -598,7 +615,7 @@ body.light .bottom-nav__pill {
   .fab-add--scrolling { transform: none; }
 }
 
-/* ------------------- Bottom sheet (§6) - glass panel entering with stackSlideIn. ------------------- */
+/* ------------------- Bottom sheet (6) - glass panel entering with stackSlideIn. ------------------- */
 .sheet-scrim {
   position: fixed;
   inset: 0;
@@ -1334,7 +1351,7 @@ body.light .pax-dist-row__input input {
   color: var(--darkFont);
 }
 
-/* History filters - collapsed behind this toggle by default (§ux review). */
+/* History filters - collapsed behind this toggle by default (ux review). */
 .filters-toggle {
   display: flex;
   align-items: center;
@@ -1615,6 +1632,10 @@ body.light .people-row__edit {
 }
 
 .btn-row--center { justify-content: center; }
+/* A .btn-block sibling (width:100%) needs the row to NOT wrap, or it just
+   drops to its own line below the other button instead of sharing the row -
+   same non-wrapping pattern .sheet__foot already relies on for Cancel/Save. */
+.btn-row--nowrap { flex-wrap: nowrap; }
 
 .add-person-row {
   display: flex;

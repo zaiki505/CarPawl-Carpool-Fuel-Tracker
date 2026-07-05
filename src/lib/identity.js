@@ -9,7 +9,7 @@
    non-owned groups. These helpers give a stable string key and equality so we
    can group/sum by payer consistently. 
    
-   REMEMBER ZAI: "me" is a special case and
+   REMEMBER: "me" is a special case and
    should not be treated as a regular person.  */
 
 export const ME = Object.freeze({ type: "me" });

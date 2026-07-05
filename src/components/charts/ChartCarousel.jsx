@@ -18,8 +18,7 @@ const CARDS = [
   { key: "freq", title: "Refuel frequency", Chart: RefuelFrequencyChart },
 ];
 
-/* Swipeable 4-card chart carousel (§18) - replaces the old per-vehicle
-   efficiency section. One shared vehicle filter feeds all 4 cards; each card
+/* Swipeable 4-card chart carousel. One shared vehicle filter feeds all 4 cards; each card
    is dumb (data in, chart out), computed by lib/dashboardCharts.js. */
 export function ChartCarousel({ ownedGroups, entriesByGroup, peopleMap }) {
   const [vehicle, setVehicle] = useState("all");

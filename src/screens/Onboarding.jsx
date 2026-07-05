@@ -6,7 +6,7 @@ import { markOnboarded } from "../db/actions.js";
 import { DEFAULTS, updateSettings } from "../db/db.js";
 import { CURRENCIES } from "../lib/currencies.js";
 
-/* First run (§5). Two steps: add your car, then optionally set currency + default
+/* First run (5). Two steps: add your car, then optionally set currency + default
    fuel price. The prefs step is skippable - skipping keeps the defaults. The
    onboarded flag is only flipped at the very end, so the car step defers it. */
 export function Onboarding({ onDone }) {
@@ -95,7 +95,7 @@ function PrefsStep({ onFinish }) {
           <MoneyInput value={price} onChange={setPrice} placeholder="2.05" />
         </Field>
 
-        <div className="btn-row btn-row--center" style={{ marginTop: "0.4rem" }}>
+        <div className="btn-row btn-row--nowrap" style={{ marginTop: "0.4rem" }}>
           <button
             className="cta-secondary"
             type="button"

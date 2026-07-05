@@ -23,7 +23,7 @@ import { whoKey, whoEquals, isMe } from "../lib/identity.js";
 import { splitMethodShort } from "../lib/splitMethods.js";
 import { StatusBadge } from "./ui/Primitives.jsx";
 import { SwipeSettle } from "./ui/SwipeSettle.jsx";
-import { Fuel, ChevronDown, Pencil, Trash2, Wallet } from "./ui/Icons.jsx";
+import { Fuel, ChevronDown, Pencil, Copy, Trash2, Wallet } from "./ui/Icons.jsx";
 
 // Roll-up status: text colour for the collected figure in the collapsed row.
 const STATUS_COLOR = {
@@ -51,6 +51,7 @@ export function EntryCard({
   onQuickSettle,
   onClearPayments,
   onEdit,
+  onDuplicate,
   onDelete,
   defaultExpanded = false,
 }) {
@@ -127,10 +128,12 @@ export function EntryCard({
         </span>
         <div className="list-row__body">
           <div className="list-row__title">
-            {entry.title || fallbackTitle || "Refuel"}
+            {entry.title || fallbackTitle || (ownedByMe ? "Refuel" : "Trip")}
           </div>
           <div className="list-row__meta">
-            <span>{hasPax ? splitMethodShort(method) : "Personal refuel"}</span>
+            <span>
+              {hasPax ? splitMethodShort(method) : ownedByMe ? "Personal refuel" : "Personal trip"}
+            </span>
             <span
               className={
                 "owner-chip " + (ownedByMe ? "owner-chip--mine" : "owner-chip--other")
@@ -183,7 +186,7 @@ export function EntryCard({
 
           {!hasPax ? (
             <p className="faint" style={{ fontSize: "0.8rem", margin: "0.4rem 0 0" }}>
-              Personal refuel - no passengers to split with.
+              Personal {ownedByMe ? "refuel" : "trip"} - no passengers to split with.
             </p>
           ) : (
             <div className="pax-list">
@@ -244,7 +247,7 @@ export function EntryCard({
                           <button
                             className="mini-btn"
                             type="button"
-                            onClick={() => onRecordPayment(entry, p.who)}
+                            onClick={() => onRecordPayment(entry, p.who, ownedByMe)}
                           >
                             <Wallet size={13} /> Pay
                           </button>
@@ -271,7 +274,7 @@ export function EntryCard({
                                 className="pay-chip__btn"
                                 type="button"
                                 aria-label="Edit payment"
-                                onClick={() => onEditPayment(entry, pm)}
+                                onClick={() => onEditPayment(entry, pm, ownedByMe)}
                               >
                                 <Pencil size={12} />
                               </button>
@@ -330,11 +333,16 @@ export function EntryCard({
                 <Pencil size={13} /> Edit
               </button>
             )}
+            {onDuplicate && (
+              <button className="mini-btn" type="button" onClick={() => onDuplicate(entry)}>
+                <Copy size={13} /> Duplicate
+              </button>
+            )}
             {onDelete && (
               <button
                 className="mini-btn mini-btn--danger"
                 type="button"
-                onClick={() => onDelete(entry)}
+                onClick={() => onDelete(entry, ownedByMe)}
               >
                 <Trash2 size={13} /> Delete
               </button>

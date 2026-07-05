@@ -14,7 +14,7 @@ import { Trash2 } from "./ui/Icons.jsx";
 /* Record OR edit a payment against a specific entry + passenger.
    Overpayment is allowed - we never cap the amount at the remaining outstanding.
    When `payment` is passed, the sheet edits (and can delete) that payment. */
-export function PaymentSheet({ entry, who, payment, peopleMap, onClose }) {
+export function PaymentSheet({ entry, who, payment, peopleMap, ownedByMe, onClose }) {
   const editing = Boolean(payment);
   const { toast, askConfirm } = useApp();
   const entryPaymentsRaw = usePaymentsForEntry(entry.id);
@@ -106,7 +106,7 @@ export function PaymentSheet({ entry, who, payment, peopleMap, onClose }) {
           <span className="muted">From</span>
           <strong>{name}</strong>
           <span className="muted">for</span>
-          <strong>{entry.title || "this refuel"}</strong>
+          <strong>{entry.title || (ownedByMe ? "this refuel" : "this trip")}</strong>
           <div className="payment-context__balance">
             {out > 0 ? (
               <>

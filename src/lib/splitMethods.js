@@ -3,21 +3,22 @@
 export const SPLIT_METHOD_OPTIONS = [
   { value: "distance", label: "Distance" },
   { value: "equal", label: "Equal" },
-  { value: "driver_comp", label: "Compensate" },
+  { value: "driver_comp", label: "Custom" },
 ];
 
 export const SPLIT_METHOD_LABELS = {
   distance: "Distance-based",
   equal: "Equal split",
-  driver_comp: "Compensate",
+  driver_comp: "Custom Split",
 };
 
 export const SPLIT_METHOD_HINTS = {
   distance:
     "Each passenger pays for the distance they actually travelled. Your own untagged driving is never billed.",
-  equal: "Fuel cost split equally among each trip's passengers.",
+  equal: 
+    "Fuel cost split equally among each trip's passengers.",
   driver_comp:
-    "Passengers compensate your: fuel + tolls + parking, plus a maintenance markup, split equally.",
+    "Fully customizable split for tolls, parking, and maintenance. Optionally pin a passenger to a fixed amount, the rest re-splits automatically.",
 };
 
 export function splitMethodLabel(m) {
@@ -28,7 +29,7 @@ export function splitMethodLabel(m) {
 export const SPLIT_METHOD_SHORT = {
   distance: "Distance split",
   equal: "Equal split",
-  driver_comp: "Compensate",
+  driver_comp: "Custom Split",
 };
 
 export function splitMethodShort(m) {

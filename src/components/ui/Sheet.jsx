@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { X } from "./Icons.jsx";
 
-/* Bottom sheet - the §6 slide-up panel. Glass panel treatment, enters with the
+/* Bottom sheet - the slide-up panel. Glass panel treatment, enters with the
    sheetUp (blur-slide) keyframe. Tapping the scrim or the close button, or
    pressing Escape, dismisses it. */
 export function Sheet({ title, onClose, children, footer, banner }) {

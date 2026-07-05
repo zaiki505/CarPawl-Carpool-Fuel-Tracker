@@ -106,6 +106,20 @@ export async function updateGroup(id, patch) {
   await db.groups.update(id, clean);
 }
 
+/** Set (or clear, with amount=null) a person's default Compensate-override
+ *  amount within this specific carpool. Scoped per-group, not globally - the
+ *  same person can have a different arrangement in a different carpool.
+ *  Stored as a plain whoKey -> amount map on the group itself. */
+export async function setGroupOverrideDefault(groupId, who, amount) {
+  const g = await db.groups.get(groupId);
+  if (!g) return;
+  const overrideDefaults = { ...(g.overrideDefaults || {}) };
+  const key = whoKey(who);
+  if (amount == null) delete overrideDefaults[key];
+  else overrideDefaults[key] = Number(amount) || 0;
+  await db.groups.update(groupId, { overrideDefaults });
+}
+
 export async function groupHasHistory(id) {
   const n = await db.entries.where("groupId").equals(id).count();
   return n > 0;
@@ -161,9 +175,13 @@ export async function createEntry(entry) {
     tolls: Number(entry.tolls) || 0,
     parking: Number(entry.parking) || 0,
     maintenancePct: Number(entry.maintenancePct) || 0,
+    // Who was actually present for tolls (Compensate method) - null means
+    // "everyone", so entries from other methods never need to set this.
+    tollsPresentWho: entry.tollsPresentWho || null,
     passengers: (entry.passengers || []).map((p) => ({
       who: p.who,
       distanceAssigned: Number(p.distanceAssigned) || 0,
+      manualOverride: p.manualOverride != null ? Number(p.manualOverride) : null,
     })),
     createdAt: nowISO(),
     updatedAt: nowISO(),
@@ -212,6 +230,7 @@ export async function updateEntry(id, patch) {
     clean.passengers = clean.passengers.map((p) => ({
       who: p.who,
       distanceAssigned: Number(p.distanceAssigned) || 0,
+      manualOverride: p.manualOverride != null ? Number(p.manualOverride) : null,
     }));
   }
   for (const k of [
@@ -343,7 +362,7 @@ export async function permanentlyDeletePerson(id) {
 }
 
 /** Wipe every table and reset to a fresh, un-onboarded state. Destructive -
- *  callers must double-confirm with the user first (§8). */
+ *  callers must double-confirm with the user first (8). */
 export async function clearAllData() {
   await db.transaction(
     "rw",

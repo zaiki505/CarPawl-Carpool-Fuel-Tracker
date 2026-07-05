@@ -73,7 +73,7 @@ export function useEntry(entryId) {
   );
 }
 
-/** Everything the Dashboard needs, assembled once. Returns null while loading. */
+/** Everything the Dashboard needs all assembled once. Returns null while loading. */
 export function useAllData() {
   return useLiveQuery(async () => {
     const [groups, entries, payments, people, settings] = await Promise.all([

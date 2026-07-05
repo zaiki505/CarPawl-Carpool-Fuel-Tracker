@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   useGroup,
   useEntriesForGroup,
@@ -7,11 +7,11 @@ import {
 } from "../db/hooks.js";
 import { useApp } from "../app/AppContext.jsx";
 import { useEntryActions } from "../app/useEntryActions.js";
-import { updateGroup, removeGroup } from "../db/actions.js";
+import { updateGroup, removeGroup, setGroupOverrideDefault } from "../db/actions.js";
 import { groupBalances, outstanding, share } from "../lib/calc.js";
 import { formatMoney, formatMoneyShort, formatKmpl, formatDate } from "../lib/format.js";
 import { whoName, personName } from "../lib/names.js";
-import { whoEquals, ME } from "../lib/identity.js";
+import { whoEquals, whoKey, ME } from "../lib/identity.js";
 import { buildWhatsAppText, shareText } from "../lib/exportText.js";
 import { EntryCard } from "../components/EntryCard.jsx";
 import { ActionMenu } from "../components/ui/ActionMenu.jsx";
@@ -41,6 +41,21 @@ export function GroupDetail({ groupId }) {
   // fill-ups, this holds the "which fill-up?" picker.
   const [payPickerWho, setPayPickerWho] = useState(null);
 
+  // Everyone who's ever ridden in this carpool - for managing their
+  // Compensate-method override default (a saved fixed amount that pre-fills
+  // new refuels, still editable per trip). Computed before the ready-guard
+  // below so this hook always runs in the same order every render.
+  const distinctPassengers = useMemo(() => {
+    const map = new Map();
+    for (const e of entries) {
+      for (const p of e.passengers || []) {
+        const key = whoKey(p.who);
+        if (!map.has(key)) map.set(key, p.who);
+      }
+    }
+    return [...map.values()];
+  }, [entries]);
+
   if (!group || !peopleMap) return <div className="app-shell" />;
 
   const isOwned = group.ownerType === "me";
@@ -63,8 +78,9 @@ export function GroupDetail({ groupId }) {
 
   function recordPaymentFor(who) {
     const payable = payableEntriesFor(who);
-    if (payable.length === 1) openSheet({ type: "payment", entry: payable[0], who });
-    else if (payable.length > 1) setPayPickerWho(who);
+    if (payable.length === 1) {
+      openSheet({ type: "payment", entry: payable[0], who, ownedByMe: isOwned });
+    } else if (payable.length > 1) setPayPickerWho(who);
   }
 
   function startEdit() {
@@ -151,7 +167,8 @@ export function GroupDetail({ groupId }) {
                 <Fuel size={14} /> {formatKmpl(group.defaultKmPerLiter)}
               </span>
               <span className="chip-fact">
-                {entries.length} refuel{entries.length === 1 ? "" : "s"}
+                {entries.length} {isOwned ? "refuel" : "trip"}
+                {entries.length === 1 ? "" : "s"}
               </span>
             </div>
             <button className="icon-btn" type="button" onClick={startEdit} aria-label="Edit car">
@@ -205,13 +222,37 @@ export function GroupDetail({ groupId }) {
         </section>
       )}
 
+      {/* Custom Split Defaults - saved per person, per carpool */}
+      {distinctPassengers.length > 0 && (
+        <section className="section-block">
+          <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
+            Custom Split Defaults
+          </h2>
+          <p className="field-hint" style={{ marginTop: 0 }}>
+            A saved fixed amount for the custom split method - pre-fills on every new{" "}
+            {isOwned ? "refuels" : "trips"}, still editable each time.
+          </p>
+          <div className="detail-panel people-list">
+            {distinctPassengers.map((who) => (
+              <OverrideDefaultRow
+                key={whoKey(who)}
+                group={group}
+                who={who}
+                peopleMap={peopleMap}
+                toast={toast}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Entries */}
       <section className="section-block">
         <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
-          Refuels
+          {isOwned ? "Refuels" : "Trips"}
         </h2>
         {entries.length === 0 ? (
-          <EmptyState emoji="⛽" title="No refuels yet">
+          <EmptyState emoji="⛽" title={isOwned ? "No refuels yet" : "No trips yet"}>
             Tap the + button to log this {isOwned ? "car's" : "carpool's"} first
             fuel entry.
           </EmptyState>
@@ -231,14 +272,14 @@ export function GroupDetail({ groupId }) {
               onQuickSettle={entryActions.onQuickSettle}
               onClearPayments={entryActions.onClearPayments}
               onEdit={entryActions.onEditEntry}
+              onDuplicate={entryActions.onDuplicateEntry}
               onDelete={entryActions.onDeleteEntry}
             />
           ))
         )}
       </section>
 
-      {/* Danger zone - same heading treatment as Settings' danger zone, so
-          destructive actions read consistently across the app. */}
+      {/* Danger zone - same heading treatment as Settings' danger zone. */}
       <section className="section-block">
         <h2 className="section-block__title" style={{ marginBottom: "0.6rem", color: "#ff6b81" }}>
           Danger zone
@@ -252,7 +293,7 @@ export function GroupDetail({ groupId }) {
       {payPickerWho && (
         <ActionMenu
           title={`Pay for ${whoName(payPickerWho, peopleMap)}`}
-          subtitle="Which refuel is this payment for?"
+          subtitle={`Which ${isOwned ? "refuel" : "trip"} is this payment for?`}
           onClose={() => setPayPickerWho(null)}
           items={payableEntriesFor(payPickerWho).map((e) => {
             const out = outstanding(e, payPickerWho, payments);
@@ -265,12 +306,62 @@ export function GroupDetail({ groupId }) {
               onClick: () => {
                 const who = payPickerWho;
                 setPayPickerWho(null);
-                openSheet({ type: "payment", entry: e, who });
+                openSheet({ type: "payment", entry: e, who, ownedByMe: isOwned });
               },
             };
           })}
         />
       )}
+    </div>
+  );
+}
+
+function OverrideDefaultRow({ group, who, peopleMap, toast }) {
+  const key = whoKey(who);
+  const saved = group.overrideDefaults?.[key];
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(saved != null ? String(saved) : "");
+
+  async function save() {
+    const trimmed = value.trim();
+    const amount = trimmed === "" ? null : Number(trimmed);
+    await setGroupOverrideDefault(group.id, who, amount);
+    setEditing(false);
+    toast(amount == null ? "Default cleared" : `Default saved: RM${amount} fixed`);
+  }
+
+  if (editing) {
+    return (
+      <div className="people-row">
+        <span className="people-row__name">{whoName(who, peopleMap)}</span>
+        <div class="pax-dist-row__input" style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+          <span>RM</span>
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.01"
+            placeholder="0.00"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            style={{ width: "5.5rem" }}
+            autoFocus
+            onKeyDown={(e) => e.key === "Enter" && save()}
+          />
+          <button className="mini-btn" type="button" onClick={save}>
+            <Check size={13} /> Save
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="people-row">
+      <span className="people-row__name">{whoName(who, peopleMap)}</span>
+      <button className="mini-btn" type="button" onClick={() => setEditing(true)}>
+        <Pencil size={13} /> {saved != null ? `RM${saved} fixed` : "No default"}
+      </button>
     </div>
   );
 }

@@ -1,8 +1,6 @@
 import React from "react";
 
-/* Fixed aurora + film-grain backdrop that sits behind all app content.
-   Mirrors the source portfolio's hero background (drifting purple/pink/blue
-   blobs + faint SVG grain). Purely decorative, pointer-events: none. */
+/* Fixed aurora + film-grain backdrop that sits behind all app content. */
 export function Background() {
   return (
     <>

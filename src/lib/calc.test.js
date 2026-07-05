@@ -13,7 +13,9 @@ import {
   thisMonthConsumption,
   efficiencyTrend,
   driverCompBase,
+  tollsTotal,
   entryTotalBillable,
+  entryShares,
 } from "./calc.js";
 import { ME, person } from "./identity.js";
 
@@ -125,27 +127,185 @@ describe("split methods", () => {
     expect(entryTotalBillable(e)).toBe(60);
   });
 
-  it("driver_comp adds tolls+parking+maintenance markup, split equally", () => {
-    const e = {
-      id: "e",
-      splitMethod: "driver_comp",
-      totalCost: 60,
-      tolls: 10,
-      parking: 5,
-      maintenancePct: 10,
-      totalDistance: 300,
-      passengers,
-    };
-    // base = (60+10+5) * 1.10 = 82.5 ; each of 2 riders = 41.25
-    expect(driverCompBase(e)).toBeCloseTo(82.5, 5);
-    expect(share(e, alex)).toBeCloseTo(41.25, 5);
-    expect(share(e, sam)).toBeCloseTo(41.25, 5);
-    expect(entryTotalBillable(e)).toBeCloseTo(82.5, 5);
+  describe("driver_comp (\"Compensate\")", () => {
+    it("equal distances (what every real entry has today) behaves exactly like the old flat equal split", () => {
+      const equalDistancePax = [
+        { who: alex, distanceAssigned: 300 },
+        { who: sam, distanceAssigned: 300 },
+      ];
+      const e = {
+        id: "e",
+        splitMethod: "driver_comp",
+        totalCost: 60,
+        tolls: 10,
+        parking: 5,
+        maintenancePct: 10,
+        totalDistance: 300,
+        passengers: equalDistancePax,
+      };
+      // base = (60+5) * 1.10 = 71.5, tolls = 10 pass-through -> 81.5 total,
+      // split evenly across 2 equal-distance riders = 40.75 each.
+      expect(driverCompBase(e)).toBeCloseTo(71.5, 5);
+      expect(tollsTotal(e)).toBe(10);
+      expect(share(e, alex)).toBeCloseTo(40.75, 5);
+      expect(share(e, sam)).toBeCloseTo(40.75, 5);
+    });
+
+    it("unequal distances weight the base (and tolls stay equal-split among the present)", () => {
+      const e = {
+        id: "e",
+        splitMethod: "driver_comp",
+        totalCost: 60,
+        parking: 0,
+        maintenancePct: 0,
+        totalDistance: 300,
+        passengers, // alex 300, sam 150 -> 2:1
+      };
+      // base = 60, split 2:1 -> alex 40, sam 20
+      expect(share(e, alex)).toBeCloseTo(40, 5);
+      expect(share(e, sam)).toBeCloseTo(20, 5);
+    });
+
+    it("a manual override is subtractive - it reduces the pool the rest split", () => {
+      const e = {
+        id: "e",
+        splitMethod: "driver_comp",
+        totalCost: 90,
+        parking: 0,
+        maintenancePct: 0,
+        totalDistance: 300,
+        passengers: [
+          { who: alex, distanceAssigned: 300, manualOverride: 15 },
+          { who: sam, distanceAssigned: 300 },
+        ],
+      };
+      expect(share(e, alex)).toBe(15);
+      expect(share(e, sam)).toBe(75); // base pool 90 - 15 override = 75, sam covers it
+      // total collected == the actual cost, no over-recovery
+      expect(entryTotalBillable(e)).toBe(90);
+    });
+
+    it("override + tolls: overridden rider pays only their fixed amount, others cover base remainder + tolls", () => {
+      const jo = person("jo");
+      const e = {
+        id: "e",
+        splitMethod: "driver_comp",
+        totalCost: 90, // base (parking 0, maint 0) = 90
+        parking: 0,
+        maintenancePct: 0,
+        tolls: 20,
+        totalDistance: 300,
+        passengers: [
+          { who: alex, distanceAssigned: 100, manualOverride: 15 },
+          { who: sam, distanceAssigned: 100 },
+          { who: jo, distanceAssigned: 100 },
+        ],
+      };
+      // base pool = 90 - 15 = 75, split equally between sam & jo = 37.5 each.
+      // tolls 20 split between the two non-overridden present = 10 each.
+      expect(share(e, alex)).toBe(15);
+      expect(share(e, sam)).toBe(47.5);
+      expect(share(e, jo)).toBe(47.5);
+      expect(entryTotalBillable(e)).toBe(110); // 90 base + 20 tolls
+    });
+
+    it("tolls only bill passengers marked present; absent/overridden riders owe nothing toward them", () => {
+      const jo = person("jo");
+      const e = {
+        id: "e",
+        splitMethod: "driver_comp",
+        totalCost: 0,
+        parking: 0,
+        maintenancePct: 0,
+        tolls: 20,
+        totalDistance: 300,
+        tollsPresentWho: [alex], // present: alex only
+        passengers: [
+          { who: alex, distanceAssigned: 100 },
+          { who: sam, distanceAssigned: 100 },
+          { who: jo, distanceAssigned: 100 },
+        ],
+      };
+      // Only alex was present for the toll -> alex owes the full 20, everyone else 0.
+      expect(share(e, alex)).toBe(20);
+      expect(share(e, sam)).toBe(0);
+      expect(share(e, jo)).toBe(0);
+    });
+
+    it("missing tollsPresentWho means everyone was present (backward compatible)", () => {
+      const e = {
+        id: "e",
+        splitMethod: "driver_comp",
+        totalCost: 0,
+        tolls: 20,
+        totalDistance: 300,
+        passengers: [
+          { who: alex, distanceAssigned: 100 },
+          { who: sam, distanceAssigned: 100 },
+        ],
+      };
+      expect(share(e, alex)).toBe(10);
+      expect(share(e, sam)).toBe(10);
+    });
   });
 
   it("shareOfRow matches share", () => {
     const e = { splitMethod: "equal", totalCost: 90, passengers };
     expect(shareOfRow(e, passengers[0])).toBe(45);
+  });
+});
+
+/* ---------------------- cent rounding ---------------------- */
+describe("cent-accurate shares", () => {
+  const alx = person("alex");
+  const sm = person("sam");
+  const jo = person("jo");
+
+  it("RM10 / 3 gives clean 2dp shares that sum EXACTLY to 10 (largest-remainder)", () => {
+    const e = {
+      splitMethod: "equal",
+      totalCost: 10,
+      passengers: [{ who: alx }, { who: sm }, { who: jo }],
+    };
+    const shares = entryShares(e);
+    // every share is a whole number of cents
+    shares.forEach((s) => expect(Math.round(s * 100)).toBe(s * 100));
+    // they add up to exactly the total, not 9.99
+    expect(shares.reduce((a, b) => a + b, 0)).toBe(10);
+    expect(entryTotalBillable(e)).toBe(10);
+    // 3.33 / 3.33 / 3.34 in some order
+    expect([...shares].sort()).toEqual([3.33, 3.33, 3.34]);
+  });
+
+  it("paying the shown (rounded) share settles a passenger to exactly zero", () => {
+    const e = {
+      id: "e",
+      splitMethod: "equal",
+      totalCost: 10,
+      passengers: [{ who: alx }, { who: sm }, { who: jo }],
+    };
+    const alxShare = share(e, alx); // 3.33 or 3.34, always 2dp
+    const payments = [{ entryId: "e", who: alx, amount: alxShare }];
+    expect(outstanding(e, alx, payments)).toBe(0);
+    expect(statusOf(e, alx, payments)).toBe("paid");
+  });
+
+  it("no phantom balance: once everyone pays their shown share, owed is exactly 0", () => {
+    const e = {
+      id: "e",
+      splitMethod: "equal",
+      totalCost: 10,
+      passengers: [{ who: alx }, { who: sm }, { who: jo }],
+    };
+    const payments = [alx, sm, jo].map((w) => ({
+      entryId: "e",
+      who: w,
+      amount: share(e, w),
+    }));
+    for (const w of [alx, sm, jo]) {
+      expect(balanceForWho([e], w, payments).owed).toBe(0);
+    }
+    expect(totalOwedToYou([{ id: "g" }], { g: [e] }, payments)).toBe(0);
   });
 });
 

@@ -6,12 +6,12 @@ import { useApp } from "../app/AppContext.jsx";
 import { Field, Segment, NumberInput } from "./ui/Primitives.jsx";
 import { SPLIT_METHOD_OPTIONS, SPLIT_METHOD_HINTS } from "../lib/splitMethods.js";
 import { haptic } from "../lib/haptics.js";
-import { Plus, Check } from "./ui/Icons.jsx";
+import { Plus, Check, Car, User } from "./ui/Icons.jsx";
 
 /* Group creation form. Two modes:
    - 'onboard'  first-run: ownerType is 'me', the ownership question is skipped
-                entirely (spec §5), and it flips the onboarded flag.
-   - 'create'   asks "Is this your vehicle, or someone else's?" first (§5);
+                entirely (spec 5), and it flips the onboarded flag.
+   - 'create'   asks "Is this your vehicle, or someone else's?" first (5);
                 "someone else's" requires picking or adding a Person.
    Reused inside a Sheet (create) and on the Onboarding screen. */
 export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false }) {
@@ -82,66 +82,98 @@ export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false 
     }
   }
 
+  const isPersonOwned = askOwnership && ownerType === "person";
+  const carNameLabel =
+    mode === "onboard"
+      ? "What's your car called?"
+      : isPersonOwned
+      ? "Their car's name"
+      : "Your car's name";
+  const carNamePlaceholder = isPersonOwned ? "e.g. Dad's Civic" : "e.g. My Myvi";
+
   return (
     <div className="field-grid">
       {askOwnership && (
-        <Field label="Whose vehicle is this?">
+        <Field
+          label="Whose vehicle is this?"
+          hint={
+            ownerType === "me"
+              ? "A car you own - you'll track its fuel and collect from riders."
+              : "Someone else's car you ride in - you'll only track your own share."
+          }
+        >
           <Segment
             value={ownerType}
             onChange={setOwnerType}
             options={[
-              { value: "me", label: "Mine" },
-              { value: "person", label: "Someone else's" },
+              {
+                value: "me",
+                label: (
+                  <span className="seg-label">
+                    <Car size={14} /> Mine
+                  </span>
+                ),
+              },
+              {
+                value: "person",
+                label: (
+                  <span className="seg-label">
+                    <User size={14} /> Someone else's
+                  </span>
+                ),
+              },
             ]}
           />
         </Field>
       )}
 
-      {askOwnership && ownerType === "person" && (
-        <Field
-          label="Who owns / drives it?"
-          hint="This is the person whose car you carpool in."
-        >
-          {people.length > 0 && (
-            <div className="chip-wrap" style={{ marginBottom: "0.6rem" }}>
-              {people.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="pick-chip"
-                  aria-pressed={ownerPersonId === p.id}
-                  onClick={() => setOwnerPersonId(p.id)}
-                >
-                  {ownerPersonId === p.id && <Check size={13} />}
-                  {p.name}
-                </button>
-              ))}
+      {isPersonOwned && (
+        <div className="owner-callout">
+          <Field
+            label="Owner / driver"
+            hint="The person whose car this is - you'll track what you owe them."
+          >
+            {people.length > 0 && (
+              <div className="chip-wrap" style={{ marginBottom: "0.6rem" }}>
+                {people.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="pick-chip"
+                    aria-pressed={ownerPersonId === p.id}
+                    onClick={() => setOwnerPersonId(p.id)}
+                  >
+                    {ownerPersonId === p.id && <Check size={13} />}
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="field-inline" style={{ gridTemplateColumns: "1fr auto" }}>
+              <input
+                type="text"
+                placeholder="Or type their name…"
+                value={newPersonName}
+                onChange={(e) => setNewPersonName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addPerson();
+                  }
+                }}
+              />
+              <button className="action-btn" type="button" onClick={addPerson}>
+                <Plus size={15} /> Add
+              </button>
             </div>
-          )}
-          <div className="field-inline" style={{ gridTemplateColumns: "1fr auto" }}>
-            <input
-              type="text"
-              placeholder="Add a new person…"
-              value={newPersonName}
-              onChange={(e) => setNewPersonName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addPerson();
-                }
-              }}
-            />
-            <button className="action-btn" type="button" onClick={addPerson}>
-              <Plus size={15} /> Add
-            </button>
-          </div>
-        </Field>
+          </Field>
+        </div>
       )}
 
-      <Field label={mode === "onboard" ? "What's your car called?" : "Car name"}>
+      <Field label={carNameLabel}>
         <input
           type="text"
-          placeholder="e.g. My Myvi, Dad's Civic"
+          placeholder={carNamePlaceholder}
           value={name}
           onChange={(e) => setName(e.target.value)}
           autoFocus

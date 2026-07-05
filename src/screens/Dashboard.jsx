@@ -138,15 +138,15 @@ export function Dashboard() {
       {/* Recent entries */}
       <section className="section-block">
         <SectionHead
-          title="Recent refuels"
+          title="Recent trips"
           action={recent.length > 0 ? "See all" : undefined}
           onAction={recent.length > 0 ? () => goTab("history") : undefined}
         />
         {recent.length === 0 ? (
           <EmptyState
             emoji="⛽"
-            title="No refuels yet"
-            actionLabel="+ Log a refuel"
+            title="No trips yet"
+            actionLabel="+ Log a trip"
             onAction={() => openSheet({ type: "addEntry" })}
           >
             Your latest fuel stops show up here once you log one.
@@ -167,6 +167,7 @@ export function Dashboard() {
               onQuickSettle={entryActions.onQuickSettle}
               onClearPayments={entryActions.onClearPayments}
               onEdit={entryActions.onEditEntry}
+              onDuplicate={entryActions.onDuplicateEntry}
               onDelete={entryActions.onDeleteEntry}
             />
           ))
