@@ -338,7 +338,7 @@ export function Settings() {
           </Field>
           <Field
             label="Maintenance markup (%)"
-            hint="Added on top of fuel + parking for Reimbursement splits. Each refuel can override it."
+            hint="Add a default maintenance markup on top of fuel + parking for Custom Split method. Each refuel can override it."
           >
             <div className="field-inline" style={{ gridTemplateColumns: "1fr auto" }}>
               <input

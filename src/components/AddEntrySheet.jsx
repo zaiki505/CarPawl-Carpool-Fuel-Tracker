@@ -486,7 +486,8 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
               active={primaryField === "distance"}
             />
             <EditCell
-              label="km/L"
+              label="Fuel Efficiency"
+              suffix="km/L"
               value={kmplInput}
               onChange={(v) => {
                 setKmplInput(v);

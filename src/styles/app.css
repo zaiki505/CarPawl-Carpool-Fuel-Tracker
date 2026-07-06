@@ -587,19 +587,19 @@ body.light .bottom-nav__pill {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  border: 1px solid var(--accent-border-40);
-  background: var(--highlight);
+  border: 2px solid var(--accent-border-40);
+  background: #b46bff;
   color: var(--lightFont);
   display: grid;
   place-items: center;
   cursor: pointer;
-  box-shadow: var(--shadow-accent);
+  box-shadow: rgb(0 0 0 / 28%) 0px 4px 16px, rgb(0 0 0 / 22%) 0px 8px 24px;
   transition: transform 0.45s var(--ease-bounce), box-shadow 0.3s ease,
     background 0.3s ease, opacity 0.2s ease;
 }
 .fab-add:hover {
   transform: translateY(-3px);
-  box-shadow: var(--shadow-accent-hover);
+  box-shadow: rgb(0 0 0 / 28%) 0px 4px 16px, rgb(0 0 0 / 22%) 0px 8px 24px;
   background: #b46bff;
 }
 .fab-add:active { transform: translateY(2px) scale(0.9); }

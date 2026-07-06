@@ -90,7 +90,7 @@ function PrefsStep({ onFinish }) {
         </Field>
         <Field
           label="Default fuel price (per liter)"
-          hint="Used to prefill new refuels. Each one can still override it."
+          hint="Used to prefill new refuels. Each refuel entry can still override the default."
         >
           <MoneyInput value={price} onChange={setPrice} placeholder="2.05" />
         </Field>
