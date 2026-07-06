@@ -110,7 +110,7 @@ function PrefsStep({ onFinish }) {
             onClick={() => finish(true)}
             disabled={busy}
           >
-            Save & finish 🐾
+            Save & finish
           </button>
         </div>
       </div>
