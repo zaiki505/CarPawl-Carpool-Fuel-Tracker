@@ -100,7 +100,7 @@ export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false,
           label="Whose vehicle is this?"
           hint={
             ownerType === "me"
-              ? "A car you own - you'll track its fuel and collect from riders."
+              ? "A car you own - you'll track its fuel and collect from passengers."
               : "Someone else's car you ride in - you'll only track your own share."
           }
         >

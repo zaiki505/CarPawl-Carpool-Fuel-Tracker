@@ -555,8 +555,8 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
               label="Split the rest by"
               hint={
                 customRemainderSplit === "distance"
-                  ? "Riders who travelled further pay more of the leftover pool."
-                  : "The leftover pool is split evenly among the riders."
+                  ? "Passengers who travelled further pay more of the leftover pool."
+                  : "The leftover pool is split evenly among the passengers."
               }
             >
               <Segment
@@ -679,7 +679,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
               {isDriverComp && parseNum(tolls) > 0 && (
                 <Field
                   label="Who was present for tolls?"
-                  hint="Unchecked riders owe nothing toward tolls."
+                  hint="Unchecked passengers owe nothing toward tolls."
                 >
                   <div className="chip-wrap">
                     {syncedPassengers.map((p) => {
