@@ -108,7 +108,7 @@ export function Dashboard() {
             emoji="🧑‍🤝‍🧑"
             title="No carpools yet"
             actionLabel="+ Add a carpool"
-            onAction={() => openSheet({ type: "createGroup" })}
+            onAction={() => openSheet({ type: "createGroup", ownerType: "person" })}
           >
             Ride in someone else's car? Track your share of their fuel here.
           </EmptyState>

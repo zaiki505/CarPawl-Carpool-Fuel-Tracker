@@ -151,10 +151,25 @@ describe("split methods", () => {
       expect(share(e, sam)).toBeCloseTo(40.75, 5);
     });
 
-    it("unequal distances weight the base (and tolls stay equal-split among the present)", () => {
+    it("remainder splits EQUALLY by default (ignores distance)", () => {
       const e = {
         id: "e",
         splitMethod: "driver_comp",
+        totalCost: 60,
+        parking: 0,
+        maintenancePct: 0,
+        totalDistance: 300,
+        passengers, // alex 300, sam 150 - distance ignored under equal
+      };
+      expect(share(e, alex)).toBeCloseTo(30, 5);
+      expect(share(e, sam)).toBeCloseTo(30, 5);
+    });
+
+    it("customRemainderSplit 'distance' weights the base by distance", () => {
+      const e = {
+        id: "e",
+        splitMethod: "driver_comp",
+        customRemainderSplit: "distance",
         totalCost: 60,
         parking: 0,
         maintenancePct: 0,

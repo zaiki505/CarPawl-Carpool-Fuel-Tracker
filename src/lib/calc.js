@@ -209,12 +209,15 @@ function customRawShare(entry, row) {
 
   const remaining = pax.filter((p) => p.manualOverride == null);
   const remainingDist = remaining.reduce((s, p) => s + (Number(p.distanceAssigned) || 0), 0);
-  const baseShare =
-    remainingDist > 0
-      ? ((Number(row.distanceAssigned) || 0) / remainingDist) * basePool
-      : remaining.length
-      ? basePool / remaining.length // no distance data - fall back to equal
-      : 0;
+  // How to split the leftover pool among the non-overridden riders: 'equal'
+  // (default) or 'distance'. Legacy custom entries have no field and equal
+  // distances anyway, so 'equal' matches them exactly.
+  const byDistance = (entry.customRemainderSplit || "equal") === "distance" && remainingDist > 0;
+  const baseShare = byDistance
+    ? ((Number(row.distanceAssigned) || 0) / remainingDist) * basePool
+    : remaining.length
+    ? basePool / remaining.length
+    : 0;
 
   const presentRemaining = remaining.filter((p) => isPresentForTolls(entry, p.who));
   const tollShare =

@@ -18,7 +18,7 @@ export const SPLIT_METHOD_HINTS = {
   equal: 
     "Fuel cost split equally among each trip's passengers.",
   driver_comp:
-    "Fully customizable split for tolls, parking, and maintenance. Optionally pin a passenger to a fixed amount, the rest re-splits automatically.",
+    "Fully customizable split with tolls, parking, and maintenance options. Capable of pinning a passenger to a fixed amount and the rest re-splits automatically.",
 };
 
 export function splitMethodLabel(m) {

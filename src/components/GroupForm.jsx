@@ -14,13 +14,15 @@ import { Plus, Check, Car, User } from "./ui/Icons.jsx";
    - 'create'   asks "Is this your vehicle, or someone else's?" first (5);
                 "someone else's" requires picking or adding a Person.
    Reused inside a Sheet (create) and on the Onboarding screen. */
-export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false }) {
+export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false, defaultOwnerType }) {
   const people = usePeople() || [];
   const { toast } = useApp();
 
   const [name, setName] = useState("");
   const [kmpl, setKmpl] = useState(String(DEFAULTS.defaultKmPerLiter));
-  const [ownerType, setOwnerType] = useState(mode === "onboard" ? "me" : "me");
+  const [ownerType, setOwnerType] = useState(
+    mode === "onboard" ? "me" : defaultOwnerType || "me"
+  );
   const [ownerPersonId, setOwnerPersonId] = useState(null);
   const [newPersonName, setNewPersonName] = useState("");
   const [splitMethod, setSplitMethod] = useState(DEFAULTS.defaultSplitMethod);

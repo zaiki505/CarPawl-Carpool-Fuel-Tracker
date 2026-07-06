@@ -1304,6 +1304,65 @@ body.light .filter-field input {
   white-space: nowrap;
 }
 
+/* Editable fuel card: each cell is a tappable input; the active (source) cell
+   and manually-set km/L are highlighted. */
+.derive-preview--editable {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+@media (min-width: 440px) {
+  .derive-preview--editable { grid-template-columns: repeat(4, 1fr); }
+}
+.edit-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+  cursor: text;
+}
+.edit-cell__box {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.34rem 0.45rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-hairline);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+body.light .edit-cell__box {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+.edit-cell__box input {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: var(--text-primary);
+}
+.edit-cell__box input:focus { outline: none; }
+.edit-cell__affix { font-size: 0.68rem; color: var(--text-faint); white-space: nowrap; }
+.edit-cell.is-active .edit-cell__box {
+  border-color: var(--accent-border-40);
+  background: var(--accent-wash-06);
+}
+.edit-cell.is-accent .edit-cell__box {
+  border-color: var(--accent-border-40);
+}
+.edit-cell.is-accent .edit-cell__affix,
+.edit-cell.is-accent .derive-item__label {
+  color: var(--accent-soft);
+}
+.edit-cell:focus-within .edit-cell__box {
+  border-color: var(--accent-border-40);
+  box-shadow: 0 0 0 3px rgba(167, 84, 255, 0.12);
+}
+
 /* per-passenger distance rows */
 .pax-dist-list {
   display: flex;
@@ -1345,6 +1404,15 @@ body.light .filter-field input {
   box-shadow: 0 0 0 3px rgba(167, 84, 255, 0.12);
 }
 .pax-dist-row__input .faint { font-size: 0.68rem; white-space: nowrap; }
+/* Custom method row can carry two inputs (distance + fixed amount) - keep them
+   compact so the row doesn't overflow on narrow screens. */
+.pax-comp-inputs {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+.pax-comp-inputs .pax-dist-row__input input { width: 66px; }
 body.light .pax-dist-row__input input {
   background: rgba(0, 0, 0, 0.04);
   border-color: rgba(0, 0, 0, 0.08);

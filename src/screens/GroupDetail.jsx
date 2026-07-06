@@ -89,9 +89,10 @@ export function GroupDetail({ groupId }) {
     setEditing(true);
   }
   async function saveEdit() {
+    const effChanged = Number(kmpl) !== Number(group.defaultKmPerLiter);
     await updateGroup(group.id, { name, defaultKmPerLiter: Number(kmpl) });
     setEditing(false);
-    toast("Car updated");
+    toast(effChanged ? "Efficiency saved - applies to new trips" : "Car updated");
   }
 
   async function onArchive() {
@@ -143,7 +144,10 @@ export function GroupDetail({ groupId }) {
             <Field label="Car name">
               <input value={name} onChange={(e) => setName(e.target.value)} />
             </Field>
-            <Field label="Fuel efficiency (km/L)">
+            <Field
+              label="Fuel efficiency (km/L)"
+              hint="Applies to new trips only - past trips keep their own saved figures."
+            >
               <NumberInput value={kmpl} onChange={setKmpl} step="0.1" min="0" />
             </Field>
             <div className="btn-row">

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Sheet } from "./ui/Sheet.jsx";
-import { Field, MoneyInput, Segment } from "./ui/Primitives.jsx";
+import { Field, Segment } from "./ui/Primitives.jsx";
 import { DatePicker } from "./ui/DatePicker.jsx";
 import {
   useGroups,
@@ -19,14 +19,7 @@ import {
   share,
 } from "../lib/calc.js";
 import { SPLIT_METHOD_OPTIONS, SPLIT_METHOD_HINTS } from "../lib/splitMethods.js";
-import {
-  formatMoney,
-  formatLiters,
-  formatKm,
-  formatKmpl,
-  todayISODate,
-  parseNum,
-} from "../lib/format.js";
+import { formatMoney, todayISODate, parseNum } from "../lib/format.js";
 import { whoName } from "../lib/names.js";
 import { ME, person as mkPerson, whoKey } from "../lib/identity.js";
 import { useApp } from "../app/AppContext.jsx";
@@ -69,10 +62,15 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
 
   const [ready, setReady] = useState(false);
   const [groupId, setGroupId] = useState(null);
+  // primaryField = which of cost/liters/distance the user last edited (the
+  // "source"); the other two derive from it via price + km/L. km/L is now a
+  // per-entry editable value (defaults to the car's efficiency).
   const [primaryField, setPrimaryField] = useState("cost");
   const [primaryValue, setPrimaryValue] = useState("");
   const [fuelPrice, setFuelPrice] = useState("");
-  const [secondValue, setSecondValue] = useState("");
+  const [kmplInput, setKmplInput] = useState("");
+  // A hand-typed km/L counts as a real (measured) reading for the trend chart.
+  const [kmplTouched, setKmplTouched] = useState(false);
   // passengers: { who, distance, custom, override } - custom tracks manual
   // distance edits, override is a string ("" = auto-split, Compensate only)
   const [passengers, setPassengers] = useState([]);
@@ -92,6 +90,8 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
   const [tolls, setTolls] = useState("");
   const [parking, setParking] = useState("");
   const [maintenancePct, setMaintenancePct] = useState("");
+  // Custom method: how the leftover pool splits - 'equal' | 'distance'.
+  const [customRemainderSplit, setCustomRemainderSplit] = useState("equal");
 
   // One-time initialisation once data is available. `src` seeds both edit mode
   // (from the loaded entry) and duplicate mode (from the passed-in entry). A
@@ -107,9 +107,14 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
       setPrimaryField("cost");
       setPrimaryValue(String(round2(src.totalCost)));
       setFuelPrice(String(src.fuelPricePerLiter));
-      setSecondValue(
-        src.hasMeasuredEfficiency ? String(round2(src.totalDistance)) : ""
+      // Reconstruct km/L from the stored totals (distance/liters); reproduces
+      // the exact same totals under the new "cost primary + km/L" derivation.
+      const srcKmpl =
+        src.totalLiters > 0 ? round2(src.totalDistance / src.totalLiters) : src.fuelPricePerLiter && 0;
+      setKmplInput(
+        srcKmpl ? String(srcKmpl) : String(groups.find((g) => g.id === src.groupId)?.defaultKmPerLiter || "")
       );
+      setKmplTouched(Boolean(src.hasMeasuredEfficiency));
       setPassengers(
         (src.passengers || []).map((p) => ({
           who: p.who,
@@ -122,6 +127,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
         src.tollsPresentWho ? new Set(src.tollsPresentWho.map(whoKey)) : null
       );
       setSplitMethod(src.splitMethod || "distance");
+      setCustomRemainderSplit(src.customRemainderSplit || "equal");
       setTolls(src.tolls ? String(src.tolls) : "");
       setParking(src.parking ? String(src.parking) : "");
       setMaintenancePct(
@@ -143,6 +149,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
           : orderedGroups[0]?.id || null;
       setGroupId(preselect);
       setFuelPrice(String(settings.defaultFuelPricePerLiter));
+      setKmplInput(String(groups.find((g) => g.id === preselect)?.defaultKmPerLiter || ""));
       setSplitMethod(settings.defaultSplitMethod || "distance");
       setMaintenancePct(String(settings.defaultMaintenancePct ?? 10));
       setReady(true);
@@ -150,24 +157,26 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
   }
 
   const group = groups.find((g) => g.id === groupId) || null;
-  const kmpl = group?.defaultKmPerLiter || 0;
   const isOwned = group?.ownerType === "me";
+  // Effective km/L for derivation: the typed value, else the car's default.
+  const kmplNum =
+    parseNum(kmplInput) > 0 ? parseNum(kmplInput) : group?.defaultKmPerLiter || 0;
 
-  // Derived totals (live preview + save payload).
+  // Derived totals (live preview + save payload). Same math as before - the
+  // last-edited field is the primary; the other two derive via price + km/L.
   const totals = useMemo(() => {
     const pv = parseNum(primaryValue) || 0;
     const price = parseNum(fuelPrice) || 0;
-    const sv = parseNum(secondValue);
     return deriveEntryTotals({
       primaryField,
       primaryValue: pv,
       pricePerLiter: price,
-      kmPerLiter: kmpl,
-      measuredDistance: primaryField === "distance" ? null : sv,
-      measuredLiters: primaryField === "distance" ? sv : null,
+      kmPerLiter: kmplNum,
     });
-  }, [primaryField, primaryValue, fuelPrice, secondValue, kmpl]);
+  }, [primaryField, primaryValue, fuelPrice, kmplNum]);
 
+  // Any hand-typed km/L makes this a measured reading (per the trend chart).
+  const hasMeasured = kmplTouched;
   const totalDistance = totals.totalDistance;
 
   // Keep non-custom passenger distances synced to the full trip distance.
@@ -188,6 +197,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
     totalCost: totals.totalCost,
     totalDistance: totals.totalDistance,
     splitMethod,
+    customRemainderSplit,
     tolls: parseNum(tolls) || 0,
     parking: parseNum(parking) || 0,
     maintenancePct: parseNum(maintenancePct) || 0,
@@ -292,6 +302,11 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
   function changeGroup(id) {
     setGroupId(id);
     setPassengers([]); // roster differs per group
+    // Reset km/L to the newly-selected car's default (unless the user had
+    // typed a custom one, keep it - they clearly meant it).
+    if (!kmplTouched) {
+      setKmplInput(String(groups.find((g) => g.id === id)?.defaultKmPerLiter || ""));
+    }
   }
 
   async function save() {
@@ -317,8 +332,9 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
       totalLiters: totals.totalLiters,
       totalDistance: totals.totalDistance,
       fuelPricePerLiter: totals.fuelPricePerLiter,
-      hasMeasuredEfficiency: totals.hasMeasuredEfficiency,
+      hasMeasuredEfficiency: hasMeasured,
       splitMethod,
+      customRemainderSplit: isDriverComp ? customRemainderSplit : "equal",
       tolls: isDriverComp ? parseNum(tolls) || 0 : 0,
       parking: isDriverComp ? parseNum(parking) || 0 : 0,
       maintenancePct: isDriverComp ? parseNum(maintenancePct) || 0 : 0,
@@ -355,17 +371,19 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
     }
   }
 
-  // --- primary/second field labels ---
-  const primaryUnit =
-    primaryField === "cost" ? "RM" : primaryField === "liters" ? "L" : "km";
-  const secondLabel =
-    primaryField === "distance"
-      ? "Actual liters filled (optional)"
-      : "Actual trip distance (optional)";
-  const secondHint =
-    primaryField === "distance"
-      ? "Know exactly how much fuel went in? Add it for a real km/L reading."
-      : "Got your real trip distance? Add it for a real km/L reading.";
+  // Value shown in each editable card cell: the field you're currently editing
+  // shows your raw input; the rest show their derived total.
+  const pvNum = parseNum(primaryValue);
+  const cellValue = (field) => {
+    if (field === primaryField) return primaryValue;
+    if (pvNum == null) return "";
+    const n = { cost: totals.totalCost, liters: totals.totalLiters, distance: totals.totalDistance }[field];
+    return n ? String(round2(n)) : "";
+  };
+  const editField = (field) => (v) => {
+    setPrimaryField(field);
+    setPrimaryValue(v);
+  };
 
   return (
     <Sheet
@@ -431,75 +449,55 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
           </Field>
 
           <div className="form-section-head">Fuel</div>
-          {/* Primary fuel input */}
-          <Field label="What do you know?">
-            <Segment
-              value={primaryField}
-              onChange={setPrimaryField}
-              options={[
-                { value: "cost", label: "Cost" },
-                { value: "liters", label: "Liters" },
-                { value: "distance", label: "Distance" },
-              ]}
-            />
-          </Field>
-
-          <div className="field-inline">
-            <Field label={`Amount (${primaryUnit})`}>
-              {primaryField === "cost" ? (
-                <MoneyInput value={primaryValue} onChange={setPrimaryValue} />
-              ) : (
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  min="0"
-                  step="0.01"
-                  placeholder={primaryField === "liters" ? "e.g. 30" : "e.g. 240"}
-                  value={primaryValue}
-                  onChange={(e) => setPrimaryValue(e.target.value)}
-                />
-              )}
-            </Field>
-            <Field label="Fuel price (RM/L)">
-              <input
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="0.01"
-                value={fuelPrice}
-                onChange={(e) => setFuelPrice(e.target.value)}
-              />
-            </Field>
-          </div>
-
-          {/* Optional second real value */}
-          <Field label={secondLabel} hint={secondHint}>
+          {/* Fuel price is a rate; the four figures below are all editable and
+              recalculate each other. Whichever you type into becomes the source. */}
+          <Field label="Fuel price (RM/L)">
             <input
               type="number"
               inputMode="decimal"
               min="0"
               step="0.01"
-              placeholder={primaryField === "distance" ? "e.g. 22" : "e.g. 540"}
-              value={secondValue}
-              onChange={(e) => setSecondValue(e.target.value)}
+              value={fuelPrice}
+              onChange={(e) => setFuelPrice(e.target.value)}
             />
           </Field>
-
-          {/* Live derived preview */}
-          <div className="derive-preview">
-            <Derived label="Cost" value={formatMoney(totals.totalCost)} />
-            <Derived label="Liters" value={formatLiters(totals.totalLiters)} />
-            <Derived label="Distance" value={formatKm(totals.totalDistance)} />
-            <Derived
+          
+         
+          <div className="derive-preview derive-preview--editable">
+            <EditCell
+              label="Cost"
+              prefix="RM"
+              value={cellValue("cost")}
+              onChange={editField("cost")}
+              active={primaryField === "cost"}
+            />
+            <EditCell
+              label="Liters"
+              suffix="L"
+              value={cellValue("liters")}
+              onChange={editField("liters")}
+              active={primaryField === "liters"}
+            />
+            <EditCell
+              label="Distance"
+              suffix="km"
+              value={cellValue("distance")}
+              onChange={editField("distance")}
+              active={primaryField === "distance"}
+            />
+            <EditCell
               label="km/L"
-              value={
-                totals.hasMeasuredEfficiency && totals.totalLiters
-                  ? formatKmpl(totals.totalDistance / totals.totalLiters)
-                  : `~${formatKmpl(kmpl)}`
-              }
-              accent={totals.hasMeasuredEfficiency}
+              value={kmplInput}
+              onChange={(v) => {
+                setKmplInput(v);
+                setKmplTouched(true);
+              }}
+              accent={kmplTouched}
             />
           </div>
+           <p className="field-hint" style={{ margin: "0 0 -0.2rem" }}>
+            Tap any figure to edit it - the others update automatically.
+          </p>
 
           <div className="form-section-head">Split</div>
           {/* Split method */}
@@ -550,6 +548,26 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
                 />
               </Field>
             </div>
+          )}
+
+          {group && isDriverComp && (
+            <Field
+              label="Split the rest by"
+              hint={
+                customRemainderSplit === "distance"
+                  ? "Riders who travelled further pay more of the leftover pool."
+                  : "The leftover pool is split evenly among the riders."
+              }
+            >
+              <Segment
+                value={customRemainderSplit}
+                onChange={setCustomRemainderSplit}
+                options={[
+                  { value: "equal", label: "Equally" },
+                  { value: "distance", label: "By distance" },
+                ]}
+              />
+            </Field>
           )}
 
           <div className="form-section-head">Passengers</div>
@@ -705,16 +723,34 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
                       )}
                     </span>
                     {isDriverComp ? (
-                      <div className="pax-dist-row__input">
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          min="0"
-                          step="0.01"
-                          placeholder="Auto"
-                          value={p.override}
-                          onChange={(e) => setPassengerOverride(key, e.target.value)}
-                        />
+                      <div className="pax-comp-inputs">
+                        {customRemainderSplit === "distance" && overrideNum == null && (
+                          <div className="pax-dist-row__input">
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min="0"
+                              step="1"
+                              placeholder="km"
+                              value={p.distance}
+                              onChange={(e) => setPassengerDistance(key, e.target.value)}
+                              aria-label={`${whoName(p.who, peopleMap)} distance (km)`}
+                            />
+                            <span className="faint">km</span>
+                          </div>
+                        )}
+                        <div className="pax-dist-row__input">
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            step="0.01"
+                            placeholder="Auto"
+                            value={p.override}
+                            onChange={(e) => setPassengerOverride(key, e.target.value)}
+                            aria-label={`${whoName(p.who, peopleMap)} fixed amount (RM)`}
+                          />
+                        </div>
                       </div>
                     ) : (
                       <span className="accent-text" style={{ fontWeight: "bold", fontSize: "0.85rem" }}>
@@ -754,14 +790,30 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
   );
 }
 
-function Derived({ label, value, accent }) {
+/* An editable cell in the fuel card. `active` = this is the field currently
+   driving the derivation; `accent` = it's a manually-set (measured) value. */
+function EditCell({ label, value, onChange, prefix, suffix, accent, active }) {
   return (
-    <div className="derive-item">
+    <label
+      className={
+        "edit-cell" + (active ? " is-active" : "") + (accent ? " is-accent" : "")
+      }
+    >
       <span className="derive-item__label">{label}</span>
-      <span className={"derive-item__value" + (accent ? " accent-text" : "")}>
-        {value}
+      <span className="edit-cell__box">
+        {prefix && <span className="edit-cell__affix">{prefix}</span>}
+        <input
+          type="number"
+          inputMode="decimal"
+          min="0"
+          step="0.01"
+          value={value}
+          placeholder="0"
+          onChange={(e) => onChange(e.target.value)}
+        />
+        {suffix && <span className="edit-cell__affix">{suffix}</span>}
       </span>
-    </div>
+    </label>
   );
 }
 

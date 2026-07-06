@@ -175,6 +175,8 @@ export async function createEntry(entry) {
     tolls: Number(entry.tolls) || 0,
     parking: Number(entry.parking) || 0,
     maintenancePct: Number(entry.maintenancePct) || 0,
+    // How the Custom method splits the leftover pool: 'equal' | 'distance'.
+    customRemainderSplit: entry.customRemainderSplit || "equal",
     // Who was actually present for tolls (Compensate method) - null means
     // "everyone", so entries from other methods never need to set this.
     tollsPresentWho: entry.tollsPresentWho || null,

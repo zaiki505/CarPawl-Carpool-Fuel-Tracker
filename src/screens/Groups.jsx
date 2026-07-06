@@ -67,7 +67,7 @@ export function Groups() {
             emoji="🧑‍🤝‍🧑"
             title="No carpools yet"
             actionLabel="+ Add a carpool"
-            onAction={() => openSheet({ type: "createGroup" })}
+            onAction={() => openSheet({ type: "createGroup", ownerType: "person" })}
           >
             Riding in someone else's car? Add a vehicle and choose “Someone
             else's” to track your share.

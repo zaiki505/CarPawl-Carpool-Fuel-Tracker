@@ -71,7 +71,7 @@ export function AppFrame() {
 
       {sheet?.type === "createGroup" && (
         <Sheet title="Add a vehicle" onClose={closeSheet}>
-          <GroupForm mode="create" onDone={closeSheet} />
+          <GroupForm mode="create" defaultOwnerType={sheet.ownerType} onDone={closeSheet} />
         </Sheet>
       )}
 
