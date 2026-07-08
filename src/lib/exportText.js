@@ -6,7 +6,10 @@ import { whoName } from "./names.js";
    current outstanding balance in a group. Delivered through the device's native
    share sheet. */
 export function buildWhatsAppText(group, entries, payments, peopleMap) {
-  const balances = groupBalances(entries, payments);
+  // In your own vehicle, your own billed share is never collectable (you
+  // paid the pump) - exclude it here the same way the Balances screen does,
+  // or the shared text would list "Me" as an outstanding balance to yourself.
+  const balances = groupBalances(entries, payments, { excludeMe: group.ownerType === "me" });
   const lines = [];
   lines.push(`⛽ ${group.name} - fuel balances`);
   lines.push(`(as of ${formatDate(new Date().toISOString())})`);

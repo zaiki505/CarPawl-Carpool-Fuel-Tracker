@@ -3,6 +3,7 @@ import { useAllData } from "../db/hooks.js";
 import { useApp } from "../app/AppContext.jsx";
 import { GroupCard } from "../components/GroupCard.jsx";
 import { EmptyState } from "../components/ui/Primitives.jsx";
+import { ScreenLoading } from "../components/ui/ScreenLoading.jsx";
 import { Plus } from "../components/ui/Icons.jsx";
 
 /* Groups screen (7.2) - My Vehicle(s) and Carpools in two separate sections.
@@ -10,7 +11,7 @@ import { Plus } from "../components/ui/Icons.jsx";
 export function Groups() {
   const data = useAllData();
   const { openGroup, openSheet } = useApp();
-  if (!data) return <div className="app-shell" />;
+  if (!data) return <ScreenLoading />;
 
   const { ownedGroups, nonOwnedGroups, entriesByGroup, payments, peopleMap } = data;
 

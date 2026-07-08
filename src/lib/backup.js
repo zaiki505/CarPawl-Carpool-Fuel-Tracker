@@ -45,10 +45,20 @@ export function validateBackup(obj) {
   if (!obj || typeof obj !== "object" || obj.app !== "CarPawl" || !obj.data) {
     throw new Error("That doesn't look like a CarPawl backup file.");
   }
+  // A backup from a newer app version may carry fields/shapes this build
+  // doesn't know how to restore - refuse rather than silently degrading.
+  if (typeof obj.version === "number" && obj.version > BACKUP_VERSION) {
+    throw new Error(
+      "This backup was made by a newer version of CarPawl - update the app before restoring it."
+    );
+  }
   const d = obj.data;
   for (const key of ["people", "groups", "entries", "payments"]) {
     if (!Array.isArray(d[key])) {
       throw new Error(`Backup is missing its "${key}" list - it may be corrupted.`);
+    }
+    if (!d[key].every((row) => row && typeof row === "object" && typeof row.id === "string")) {
+      throw new Error(`Backup's "${key}" list looks corrupted - one or more rows are invalid.`);
     }
   }
   return obj;

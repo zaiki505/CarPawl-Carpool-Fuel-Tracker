@@ -10,6 +10,7 @@ import {
 import { formatMoney, formatMoneyShort, formatLiters, monthLabel } from "../lib/format.js";
 import { personName } from "../lib/names.js";
 import { StatCard, SectionHead, EmptyState } from "../components/ui/Primitives.jsx";
+import { ScreenLoading } from "../components/ui/ScreenLoading.jsx";
 import { GroupCard } from "../components/GroupCard.jsx";
 import { EntryCard } from "../components/EntryCard.jsx";
 import { FuelSpendCard } from "../components/FuelSpendCard.jsx";
@@ -21,7 +22,7 @@ export function Dashboard() {
   const { openGroup, goTab, openSheet } = useApp();
   const entryActions = useEntryActions();
 
-  if (!data) return <div className="app-shell" />;
+  if (!data) return <ScreenLoading />;
 
   const {
     ownedGroups,
@@ -35,6 +36,11 @@ export function Dashboard() {
   const owedToYou = totalOwedToYou(ownedGroups, entriesByGroup, payments);
   const youOwe = totalYouOwe(nonOwnedGroups, entriesByGroup, payments);
   const consumption = thisMonthConsumption({ ownedGroups, entriesByGroup });
+
+  // Fuel-spend card counts only entries in active (non-archived) groups, matching
+  // the "to collect" / "to pay" totals above.
+  const activeGroupIds = new Set(data.activeGroups.map((g) => g.id));
+  const spendEntries = entries.filter((e) => activeGroupIds.has(e.groupId));
 
   const recent = entries.slice(0, 4);
 
@@ -65,7 +71,7 @@ export function Dashboard() {
           valueClass={youOwe > 0 ? "stat-card__value--neg" : ""}
           hint="in carpools"
         />
-        <FuelSpendCard entries={entries} groupOwnedMap={data.groupOwnedMap} />
+        <FuelSpendCard entries={spendEntries} groupOwnedMap={data.groupOwnedMap} />
         <StatCard
           wide
           icon={<Gauge size={13} />}
@@ -135,10 +141,10 @@ export function Dashboard() {
         />
       </section>
 
-      {/* Recent entries */}
+      {/* Latest activity: most recent entries, including any upcoming (scheduled) ones */}
       <section className="section-block">
         <SectionHead
-          title="Recent trips"
+          title="Latest activity"
           action={recent.length > 0 ? "See all" : undefined}
           onAction={recent.length > 0 ? () => goTab("history") : undefined}
         />

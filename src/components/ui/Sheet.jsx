@@ -7,7 +7,13 @@ import { X } from "./Icons.jsx";
 export function Sheet({ title, onClose, children, footer, banner }) {
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      // Defer to whatever's layered above the sheet: a confirm dialog / action
+      // menu (.modal-scrim) or a portalled popover (date picker / select menu)
+      // each handle their own Escape, so this press should close only the
+      // topmost one, not the sheet underneath it in the same keystroke.
+      if (document.querySelector(".modal-scrim, .z-dp-menu, .z-select__menu")) return;
+      onClose();
     };
     window.addEventListener("keydown", onKey);
     // lock body scroll while open

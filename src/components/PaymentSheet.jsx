@@ -4,7 +4,7 @@ import { Field, MoneyInput } from "./ui/Primitives.jsx";
 import { DatePicker } from "./ui/DatePicker.jsx";
 import { createPayment, updatePayment, removePayment } from "../db/actions.js";
 import { useApp } from "../app/AppContext.jsx";
-import { usePaymentsForEntry } from "../db/hooks.js";
+import { usePaymentsForEntry, useEntry } from "../db/hooks.js";
 import { outstanding } from "../lib/calc.js";
 import { formatMoney, formatMoneyShort, todayISODate } from "../lib/format.js";
 import { whoName } from "../lib/names.js";
@@ -19,18 +19,23 @@ export function PaymentSheet({ entry, who, payment, peopleMap, ownedByMe, onClos
   const { toast, askConfirm } = useApp();
   const entryPaymentsRaw = usePaymentsForEntry(entry.id);
   const entryPayments = entryPaymentsRaw || [];
+  // Re-read the entry live rather than trusting the snapshot the caller
+  // opened this sheet with - if it was edited (e.g. from another tab) while
+  // this sheet is open, outstanding() should reflect the current shares, not
+  // the moment-of-open ones. Falls back to the snapshot until the query
+  // resolves (or if the entry's been deleted from under).
+  const liveEntry = useEntry(entry.id) || entry;
   // Outstanding excluding the payment being edited (so the prefill is sensible).
   const others = editing
     ? entryPayments.filter((p) => p.id !== payment.id)
     : entryPayments;
-  const out = outstanding(entry, who, others);
+  const out = outstanding(liveEntry, who, others);
 
   const [amount, setAmount] = useState(editing ? String(payment.amount) : "");
   const [amtInited, setAmtInited] = useState(editing);
   const [date, setDate] = useState(editing ? payment.date : todayISODate());
   const [note, setNote] = useState(editing ? payment.note || "" : "");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
 
   // Default the amount to the outstanding balance once payments have loaded
   // Doing this in an effect avoids seeding from a stale pre-load value.
@@ -42,10 +47,9 @@ export function PaymentSheet({ entry, who, payment, peopleMap, ownedByMe, onClos
   }, [entryPaymentsRaw, amtInited, out]);
 
   async function save() {
-    setError("");
     const amt = Number(amount);
     if (!amt || amt <= 0) {
-      setError("Enter how much they paid.");
+      toast("Enter how much they paid.", "error");
       return;
     }
     setBusy(true);
@@ -61,7 +65,7 @@ export function PaymentSheet({ entry, who, payment, peopleMap, ownedByMe, onClos
       if (amt >= out - 0.005) confettiBurst();
       onClose();
     } catch (e) {
-      setError(e.message);
+      toast(e.message, "error");
       setBusy(false);
     }
   }
@@ -106,7 +110,7 @@ export function PaymentSheet({ entry, who, payment, peopleMap, ownedByMe, onClos
           <span className="muted">From</span>
           <strong>{name}</strong>
           <span className="muted">for</span>
-          <strong>{entry.title || (ownedByMe ? "this refuel" : "this trip")}</strong>
+          <strong>{liveEntry.title || (ownedByMe ? "this refuel" : "this trip")}</strong>
           <div className="payment-context__balance">
             {out > 0 ? (
               <>
@@ -151,12 +155,6 @@ export function PaymentSheet({ entry, who, payment, peopleMap, ownedByMe, onClos
           <button className="action-btn btn-block btn-danger" type="button" onClick={del}>
             <Trash2 size={15} /> Delete this payment
           </button>
-        )}
-
-        {error && (
-          <div className="form-status is-visible" data-state="error">
-            {error}
-          </div>
         )}
       </div>
     </Sheet>

@@ -9,11 +9,20 @@ describe("monthlyCostTrend", () => {
     const entries = [
       { date: "2026-05-10", totalCost: 50 },
       { date: "2026-07-03", totalCost: 90 },
-      { date: "2026-07-20", totalCost: 30 },
+      { date: "2026-07-12", totalCost: 30 }, // both July entries are before REF
     ];
     const trend = monthlyCostTrend(entries, { months: 3, ref: REF });
     expect(trend.map((t) => t.label)).toEqual(["May", "Jun", "Jul"]);
     expect(trend.map((t) => t.cost)).toEqual([50, 0, 120]);
+  });
+
+  it("excludes upcoming (future-dated) refuels from the buckets", () => {
+    const entries = [
+      { date: "2026-07-03", totalCost: 90 },
+      { date: "2026-07-20", totalCost: 30 }, // after REF -> upcoming, not counted
+    ];
+    const trend = monthlyCostTrend(entries, { months: 1, ref: REF });
+    expect(trend).toEqual([{ label: "Jul", cost: 90 }]);
   });
 });
 
@@ -57,13 +66,26 @@ describe("costByPerson", () => {
       },
     ];
     const peopleMap = new Map([["alex", { id: "alex", name: "Alex" }]]);
-    const result = costByPerson(entries, peopleMap);
+    const result = costByPerson(entries, peopleMap, { ref: REF });
     expect(result[0]).toMatchObject({ name: "Alex", amount: 90 }); // 30 + 60
     expect(result[1]).toMatchObject({ name: "Me", amount: 60 });
   });
 
   it("empty entries -> empty list", () => {
     expect(costByPerson([], new Map())).toEqual([]);
+  });
+
+  it("excludes upcoming (future-dated) refuels", () => {
+    const entries = [
+      {
+        date: "2026-07-20", // after REF -> upcoming
+        totalCost: 60,
+        totalDistance: 200,
+        splitMethod: "distance",
+        passengers: [{ who: person("alex"), distanceAssigned: 200 }],
+      },
+    ];
+    expect(costByPerson(entries, new Map(), { ref: REF })).toEqual([]);
   });
 });
 

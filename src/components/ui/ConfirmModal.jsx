@@ -1,10 +1,23 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useApp } from "../../app/AppContext.jsx";
 
 /* Confirmation dialog for destructive / irreversible actions (§8). Driven by
    the promise-based askConfirm() in AppContext. */
 export function ConfirmModal() {
   const { confirm, resolveConfirm } = useApp();
+
+  // Escape cancels, same as tapping the scrim. This is the topmost overlay
+  // by convention (see Sheet's Escape guard), so it must consume the press
+  // itself rather than leaving it to bubble to whatever's underneath.
+  useEffect(() => {
+    if (!confirm) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") resolveConfirm(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [confirm, resolveConfirm]);
+
   if (!confirm) return null;
 
   return (

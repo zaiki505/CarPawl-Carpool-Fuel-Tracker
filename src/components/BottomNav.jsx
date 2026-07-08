@@ -35,13 +35,13 @@ export function BottomNav({ onAdd }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Position the glider under the active tab. The glider is absolutely positioned inside the pill.
+  const measure = (el) => setIndStyle({ left: el.offsetLeft, width: el.offsetWidth });
+
   useLayoutEffect(() => {
     const el = itemRefs.current[tab];
     if (!el) return;
-    const parent = el.parentElement;
-    const p = parent.getBoundingClientRect();
-    const r = el.getBoundingClientRect();
-    setIndStyle({ left: r.left - p.left, width: r.width });
+    measure(el);
     if (!firstRender.current) {
       setMoving(true);
       const t = setTimeout(() => setMoving(false), 520);
@@ -50,14 +50,11 @@ export function BottomNav({ onAdd }) {
     firstRender.current = false;
   }, [tab]);
 
-  // Recalculate on resize so the indicator stays aligned.
+  // Keep it aligned if the viewport and  the pill resizes.
   useEffect(() => {
     const onResize = () => {
       const el = itemRefs.current[tab];
-      if (!el) return;
-      const p = el.parentElement.getBoundingClientRect();
-      const r = el.getBoundingClientRect();
-      setIndStyle({ left: r.left - p.left, width: r.width });
+      if (el) measure(el);
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);

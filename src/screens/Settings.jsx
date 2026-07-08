@@ -17,6 +17,7 @@ import {
 import { exportToFile, readBackupFile, restoreFromBackup } from "../lib/backup.js";
 import { getTheme, toggleTheme } from "../lib/theme.js";
 import { Segment, Field } from "../components/ui/Primitives.jsx";
+import { ScreenLoading } from "../components/ui/ScreenLoading.jsx";
 import { Select } from "../components/ui/Select.jsx";
 import { SPLIT_METHOD_OPTIONS, SPLIT_METHOD_HINTS } from "../lib/splitMethods.js";
 import { CURRENCIES } from "../lib/currencies.js";
@@ -61,7 +62,7 @@ export function Settings() {
     setMaint((m) => (m == null ? String(settings.defaultMaintenancePct ?? 10) : m));
   }, [settings]);
 
-  if (!settings) return <div className="app-shell" />;
+  if (!settings) return <ScreenLoading />;
 
   const archivedPeople = allPeople.filter((p) => p.isArchived && !p.cleared);
   const archivedGroups = allGroups.filter((g) => g.isArchived && !g.cleared);
@@ -136,6 +137,24 @@ export function Settings() {
     toast(res === "archived" ? `${p.name} archived` : `${p.name} removed`);
   }
 
+  async function onRestoreGroup(g) {
+    try {
+      await restoreGroup(g.id);
+      toast(`${g.name} restored`);
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
+  async function onRestorePerson(p) {
+    try {
+      await restorePerson(p.id);
+      toast(`${p.name} restored`);
+    } catch (e) {
+      toast(e.message, "error");
+    }
+  }
+
   async function onClearArchivedGroup(g) {
     const ok = await askConfirm({
       title: `Clear ${g.name} from the list?`,
@@ -144,8 +163,12 @@ export function Settings() {
       danger: true,
     });
     if (!ok) return;
-    await clearGroup(g.id);
-    toast(`${g.name} cleared`);
+    try {
+      await clearGroup(g.id);
+      toast(`${g.name} cleared`);
+    } catch (e) {
+      toast(e.message, "error");
+    }
   }
 
   async function onClearArchivedPerson(p) {
@@ -156,8 +179,12 @@ export function Settings() {
       danger: true,
     });
     if (!ok) return;
-    await clearPerson(p.id);
-    toast(`${p.name} cleared`);
+    try {
+      await clearPerson(p.id);
+      toast(`${p.name} cleared`);
+    } catch (e) {
+      toast(e.message, "error");
+    }
   }
 
   async function onPermaDeleteGroup(g) {
@@ -168,8 +195,12 @@ export function Settings() {
       danger: true,
     });
     if (!ok) return;
-    await permanentlyDeleteGroup(g.id);
-    toast(`${g.name} deleted permanently`);
+    try {
+      await permanentlyDeleteGroup(g.id);
+      toast(`${g.name} deleted permanently`);
+    } catch (e) {
+      toast(e.message, "error");
+    }
   }
 
   async function onPermaDeletePerson(p) {
@@ -180,8 +211,12 @@ export function Settings() {
       danger: true,
     });
     if (!ok) return;
-    await permanentlyDeletePerson(p.id);
-    toast(`${p.name} deleted permanently`);
+    try {
+      await permanentlyDeletePerson(p.id);
+      toast(`${p.name} deleted permanently`);
+    } catch (e) {
+      toast(e.message, "error");
+    }
   }
 
   async function onClearAll() {
@@ -201,8 +236,12 @@ export function Settings() {
       danger: true,
     });
     if (!second) return;
-    await clearAllData();
-    toast("All data cleared. Starting fresh.");
+    try {
+      await clearAllData();
+      toast("All data cleared. Starting fresh.");
+    } catch (e) {
+      toast(e.message, "error");
+    }
   }
 
   async function onExport() {
@@ -432,10 +471,7 @@ export function Settings() {
                   <button
                     className="mini-btn"
                     type="button"
-                    onClick={async () => {
-                      await restoreGroup(g.id);
-                      toast(`${g.name} restored`);
-                    }}
+                    onClick={() => onRestoreGroup(g)}
                   >
                     <ArchiveRestore size={13} /> Restore
                   </button>
@@ -458,10 +494,7 @@ export function Settings() {
                   <button
                     className="mini-btn"
                     type="button"
-                    onClick={async () => {
-                      await restorePerson(p.id);
-                      toast(`${p.name} restored`);
-                    }}
+                    onClick={() => onRestorePerson(p)}
                   >
                     <ArchiveRestore size={13} /> Restore
                   </button>
@@ -489,14 +522,15 @@ export function Settings() {
           Backup & restore
         </h2>
         <div className="detail-panel field-grid">
-          <p className="field-hint" style={{ marginTop: 0 }}>
-            Everything lives on this device. Export a JSON backup regularly and
-            keep it somewhere safe.
-          </p>
-          <div className="btn-row btn-row--center">
+          <p className="field-hint" style={{ marginTop: "0" }}>
+              Everything lives on this device. Export a JSON backup regularly and
+              keep it somewhere safe.
+            </p>
+          <div className="btn-row btn-row--center" style={{ gap: "0.6rem", flexDirection: "column", alignItems: "center" }}>
             <button className="cta-primary" type="button" onClick={onExport}>
               <Download size={16} /> Export JSON
             </button>
+            
             <button
               className="cta-secondary"
               type="button"
@@ -512,7 +546,7 @@ export function Settings() {
               onChange={onImportFile}
             />
           </div>
-          <p className="field-hint" style={{ textAlign: "center" }}>
+          <p className="field-hint" style={{ marginTop: "0.6rem" }}>
             Restoring a backup replaces everything currently on this device.
             Google Drive backup is planned as a later add-on.
           </p>

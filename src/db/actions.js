@@ -13,6 +13,11 @@ import { whoEquals, whoKey } from "../lib/identity.js";
    deleting when history exists, blocking passenger removal when payments exist,
    cascading entry->payment deletes) live in one place. */
 
+/** Coerce to a number, never negative. The UI already
+ *  rejects negative money/measurement input before it gets here, but every
+ *  write path clamps too so a negative value can never reach storage. */
+const nonNeg = (n) => Math.max(0, Number(n) || 0);
+
 /* ============================ People ============================ */
 
 export async function createPerson(name) {
@@ -69,7 +74,16 @@ export async function restorePerson(id) {
 export async function clearPerson(id) {
   const p = await db.people.get(id);
   if (!p) return;
-  await db.people.put({ id: p.id, name: p.name, isArchived: true, cleared: true });
+  // Keep createdAt - the read hooks sort by it; dropping it would make the
+  // stub invisible to any orderBy("createdAt") query (IndexedDB indexes
+  // exclude records missing the indexed field).
+  await db.people.put({
+    id: p.id,
+    name: p.name,
+    isArchived: true,
+    cleared: true,
+    createdAt: p.createdAt || nowISO(),
+  });
 }
 
 /* ============================ Groups ============================ */
@@ -102,7 +116,10 @@ export async function updateGroup(id, patch) {
   if (clean.defaultKmPerLiter != null) {
     clean.defaultKmPerLiter = Number(clean.defaultKmPerLiter) || 0;
   }
-  if (clean.name != null) clean.name = String(clean.name).trim();
+  if (clean.name != null) {
+    clean.name = String(clean.name).trim();
+    if (!clean.name) throw new Error("Give this car a name.");
+  }
   await db.groups.update(id, clean);
 }
 
@@ -151,6 +168,7 @@ export async function clearGroup(id) {
     ownerPersonId: g.ownerPersonId ?? null,
     isArchived: true,
     cleared: true,
+    createdAt: g.createdAt || nowISO(),
   });
 }
 
@@ -165,16 +183,16 @@ export async function createEntry(entry) {
     groupId: entry.groupId,
     date: entry.date,
     title: entry.title?.trim() || null,
-    totalCost: Number(entry.totalCost) || 0,
-    totalLiters: Number(entry.totalLiters) || 0,
-    totalDistance: Number(entry.totalDistance) || 0,
-    fuelPricePerLiter: Number(entry.fuelPricePerLiter) || 0,
+    totalCost: nonNeg(entry.totalCost),
+    totalLiters: nonNeg(entry.totalLiters),
+    totalDistance: nonNeg(entry.totalDistance),
+    fuelPricePerLiter: nonNeg(entry.fuelPricePerLiter),
     hasMeasuredEfficiency: Boolean(entry.hasMeasuredEfficiency),
     // Split method + driver-comp extras (snapshotted onto the entry).
     splitMethod: entry.splitMethod || "distance",
-    tolls: Number(entry.tolls) || 0,
-    parking: Number(entry.parking) || 0,
-    maintenancePct: Number(entry.maintenancePct) || 0,
+    tolls: nonNeg(entry.tolls),
+    parking: nonNeg(entry.parking),
+    maintenancePct: nonNeg(entry.maintenancePct),
     // How the Custom method splits the leftover pool: 'equal' | 'distance'.
     customRemainderSplit: entry.customRemainderSplit || "equal",
     // Who was actually present for tolls (Compensate method) - null means
@@ -182,8 +200,8 @@ export async function createEntry(entry) {
     tollsPresentWho: entry.tollsPresentWho || null,
     passengers: (entry.passengers || []).map((p) => ({
       who: p.who,
-      distanceAssigned: Number(p.distanceAssigned) || 0,
-      manualOverride: p.manualOverride != null ? Number(p.manualOverride) : null,
+      distanceAssigned: nonNeg(p.distanceAssigned),
+      manualOverride: p.manualOverride != null ? nonNeg(p.manualOverride) : null,
     })),
     createdAt: nowISO(),
     updatedAt: nowISO(),
@@ -231,8 +249,8 @@ export async function updateEntry(id, patch) {
   if (clean.passengers) {
     clean.passengers = clean.passengers.map((p) => ({
       who: p.who,
-      distanceAssigned: Number(p.distanceAssigned) || 0,
-      manualOverride: p.manualOverride != null ? Number(p.manualOverride) : null,
+      distanceAssigned: nonNeg(p.distanceAssigned),
+      manualOverride: p.manualOverride != null ? nonNeg(p.manualOverride) : null,
     }));
   }
   for (const k of [
@@ -244,7 +262,7 @@ export async function updateEntry(id, patch) {
     "parking",
     "maintenancePct",
   ]) {
-    if (clean[k] != null) clean[k] = Number(clean[k]) || 0;
+    if (clean[k] != null) clean[k] = nonNeg(clean[k]);
   }
   await db.entries.update(id, clean);
 }
@@ -279,7 +297,10 @@ export async function createPayment({ entryId, who, amount, date, note }) {
 
 export async function updatePayment(id, patch) {
   const clean = { ...patch, updatedAt: nowISO() };
-  if (clean.amount != null) clean.amount = Number(clean.amount) || 0;
+  if (clean.amount != null) {
+    clean.amount = Number(clean.amount) || 0;
+    if (clean.amount <= 0) throw new Error("Enter a payment amount.");
+  }
   if (clean.note != null) clean.note = String(clean.note).trim() || null;
   await db.payments.update(id, clean);
 }

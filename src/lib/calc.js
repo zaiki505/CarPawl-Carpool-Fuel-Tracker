@@ -9,6 +9,7 @@
    distance is km; efficiency is km/L. */
 
 import { whoEquals, whoKey, isMe } from "./identity.js";
+import { parseISODate, isFutureDate } from "./format.js";
 
 /* ------------------------------------------------------------------ *
  * Fuel math (per entry)
@@ -136,7 +137,6 @@ export function entryEfficiencyDisplay(entry) {
  *      - tolls split EQUALLY among the non-overridden passengers who were
  *        present for them (entry.tollsPresentWho; null = everyone).
  * ------------------------------------------------------------------ */
-export const SPLIT_METHODS = ["distance", "equal", "driver_comp"];
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -285,14 +285,16 @@ export function entryCollectible(entry, { ownedByMe = false } = {}) {
   return entryTotalBillable(entry, { excludeMe: ownedByMe });
 }
 
-/** Total collected from all passengers on an entry (all payments on it). */
-export function entryTotalPaid(entry, payments) {
-  return (payments || [])
-    .filter((pm) => pm.entryId === entry.id)
-    .reduce((sum, pm) => sum + (Number(pm.amount) || 0), 0);
-}
-
-/** Sum of payments for a given who against a given entry. */
+/** Sum of payments for a given who against a given entry.
+ *  DECISION (asymmetric on purpose): a payment's own `date` is never checked
+ *  against isFutureDate - it counts immediately once recorded, unlike an
+ *  entry's date which gates whether its share counts at all (see
+ *  balanceForWho). Recording a payment is an intentional user action (money
+ *  changed hands), so there's no "not in effect yet" state for it the way
+ *  there is for a merely-scheduled refuel. In practice this is moot anyway:
+ *  the UI only lets you record a payment against an entry that isn't itself
+ *  upcoming (see EntryCard's `canSettle`/Pay-button gate and GroupDetail's
+ *  payableEntriesFor), so a payment normally can't outrun its own entry. */
 export function paymentsFor(entry, who, payments) {
   return (payments || [])
     .filter((pm) => pm.entryId === entry.id && whoEquals(pm.who, who))
@@ -326,12 +328,13 @@ export function statusOf(entry, who, payments) {
  *   credit = sum |outstanding(entry, who)| over entries where outstanding < 0
  * Never netted together.
  * ------------------------------------------------------------------ */
-export function balanceForWho(groupEntries, who, payments) {
+export function balanceForWho(groupEntries, who, payments, { ref = new Date() } = {}) {
   // Ignore sub-cent dust so a fully-paid entry never leaves a phantom balance.
   const EPS = 0.005;
   let owed = 0;
   let credit = 0;
   for (const entry of groupEntries) {
+    if (isFutureDate(entry.date, ref)) continue;
     const out = outstanding(entry, who, payments);
     if (out > EPS) owed += out;
     else if (out < -EPS) credit += Math.abs(out);
@@ -398,7 +401,7 @@ export function totalYouOwe(nonOwnedGroups, entriesByGroup, payments) {
  * ISO); compare by year+month in local time.
  * ------------------------------------------------------------------ */
 export function ymOf(dateStr) {
-  const d = new Date(dateStr);
+  const d = parseISODate(dateStr) || new Date(dateStr);
   return { y: d.getFullYear(), m: d.getMonth() };
 }
 export function isSameMonth(dateStr, ref = new Date()) {
@@ -415,7 +418,8 @@ export function thisMonthConsumption({ ownedGroups, entriesByGroup, ref = new Da
   let liters = 0;
   for (const g of ownedGroups) {
     for (const e of entriesByGroup[g.id] || []) {
-      if (isSameMonth(e.date, ref)) {
+      // Upcoming refuels don't count toward spend until their date arrives.
+      if (isSameMonth(e.date, ref) && !isFutureDate(e.date, ref)) {
         cost += Number(e.totalCost) || 0;
         liters += Number(e.totalLiters) || 0;
       }
@@ -434,26 +438,12 @@ export function efficiencyTrend(groupEntries, { days = 30, ref = new Date() } = 
   cutoff.setDate(cutoff.getDate() - days);
   return (groupEntries || [])
     .filter((e) => e.hasMeasuredEfficiency && e.totalLiters > 0)
-    .filter((e) => new Date(e.date) >= cutoff)
+    .filter((e) => !isFutureDate(e.date, ref))
+    .filter((e) => (parseISODate(e.date) || new Date(e.date)) >= cutoff)
     .map((e) => ({
       date: e.date,
       efficiency: e.totalDistance / e.totalLiters,
       title: e.title || null,
     }))
-    .sort((a, b) => new Date(a.date) - new Date(b.date));
-}
-
-/* ------------------------------------------------------------------ *
- * Distance-tagging helper: distance driven that is NOT billed to anyone
- * (the owner's own driving).
- * ------------------------------------------------------------------ */
-export function unbilledDistance(entry) {
-  const tagged = (entry.passengers || []).reduce(
-    (s, p) => s + (Number(p.distanceAssigned) || 0),
-    0
-  );
-  // Note: passengers can overlap the same distance (each rides some of it), so
-  // this is a rough "max passenger reach vs total" indicator, not a strict
-  // subtraction. Billing itself is per-passenger via share().
-  return Math.max(0, entry.totalDistance - tagged);
+    .sort((a, b) => (parseISODate(a.date) || 0) - (parseISODate(b.date) || 0));
 }

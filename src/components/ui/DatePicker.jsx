@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { formatDate, todayISODate } from "../../lib/format.js";
+import { formatDate, todayISODate, parseISODate } from "../../lib/format.js";
 import { Calendar, ChevronLeft, ChevronRight, X } from "./Icons.jsx";
 
 /* A branded date picker with a month-grid calendar popover, replacing the
@@ -21,14 +21,12 @@ export function DatePicker({ value, onChange, placeholder = "Pick a date", clear
   const [rect, setRect] = useState(null);
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
-  const base = value ? new Date(value) : new Date();
+  const base = parseISODate(value) || new Date();
   const [view, setView] = useState({ y: base.getFullYear(), m: base.getMonth() });
 
   useEffect(() => {
-    if (value) {
-      const d = new Date(value);
-      if (!Number.isNaN(d.getTime())) setView({ y: d.getFullYear(), m: d.getMonth() });
-    }
+    const d = parseISODate(value);
+    if (d) setView({ y: d.getFullYear(), m: d.getMonth() });
   }, [value]);
 
   useEffect(() => {

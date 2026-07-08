@@ -9,13 +9,14 @@ import { useApp } from "../app/AppContext.jsx";
 import { useEntryActions } from "../app/useEntryActions.js";
 import { updateGroup, removeGroup, setGroupOverrideDefault } from "../db/actions.js";
 import { groupBalances, outstanding, share } from "../lib/calc.js";
-import { formatMoney, formatMoneyShort, formatKmpl, formatDate } from "../lib/format.js";
+import { formatMoney, formatMoneyShort, formatKmpl, formatDate, isFutureDate } from "../lib/format.js";
 import { whoName, personName } from "../lib/names.js";
 import { whoEquals, whoKey, ME } from "../lib/identity.js";
 import { buildWhatsAppText, shareText } from "../lib/exportText.js";
 import { EntryCard } from "../components/EntryCard.jsx";
 import { ActionMenu } from "../components/ui/ActionMenu.jsx";
 import { EmptyState, Field, NumberInput } from "../components/ui/Primitives.jsx";
+import { ScreenLoading } from "../components/ui/ScreenLoading.jsx";
 import {
   ArrowLeft,
   Pencil,
@@ -56,7 +57,7 @@ export function GroupDetail({ groupId }) {
     return [...map.values()];
   }, [entries]);
 
-  if (!group || !peopleMap) return <div className="app-shell" />;
+  if (!group || !peopleMap) return <ScreenLoading />;
 
   const isOwned = group.ownerType === "me";
   const balances = groupBalances(entries, payments, { excludeMe: isOwned }).filter(
@@ -65,15 +66,18 @@ export function GroupDetail({ groupId }) {
   // Your own share across this vehicle's fill-ups (billed, covered by you), shown
   // for reference, never collectable.
   const meBilled = isOwned
-    ? entries.reduce((sum, e) => sum + share(e, ME), 0)
+    ? entries
+        .filter((e) => !isFutureDate(e.date))
+        .reduce((sum, e) => sum + share(e, ME), 0)
     : 0;
 
   // Fill-ups a person can have a payment applied to: those they still owe on,
-  // or (if they only hold credit) any fill-up they're on.
+  // or (if they only hold credit) any fill-up they're on. Upcoming (future-dated) refuels are excluded.
   const payableEntriesFor = (who) => {
-    const owing = entries.filter((e) => outstanding(e, who, payments) > 0.005);
+    const dueEntries = entries.filter((e) => !isFutureDate(e.date));
+    const owing = dueEntries.filter((e) => outstanding(e, who, payments) > 0.005);
     if (owing.length) return owing;
-    return entries.filter((e) => (e.passengers || []).some((p) => whoEquals(p.who, who)));
+    return dueEntries.filter((e) => (e.passengers || []).some((p) => whoEquals(p.who, who)));
   };
 
   function recordPaymentFor(who) {
@@ -89,10 +93,24 @@ export function GroupDetail({ groupId }) {
     setEditing(true);
   }
   async function saveEdit() {
-    const effChanged = Number(kmpl) !== Number(group.defaultKmPerLiter);
-    await updateGroup(group.id, { name, defaultKmPerLiter: Number(kmpl) });
-    setEditing(false);
-    toast(effChanged ? "Efficiency saved - applies to new trips" : "Car updated");
+    const nm = name.trim();
+    if (!nm) {
+      toast("Give this car a name.", "error");
+      return;
+    }
+    const kmplNum = Number(kmpl);
+    if (!(kmplNum > 0)) {
+      toast("Fuel efficiency must be greater than 0.", "error");
+      return;
+    }
+    const effChanged = kmplNum !== Number(group.defaultKmPerLiter);
+    try {
+      await updateGroup(group.id, { name: nm, defaultKmPerLiter: kmplNum });
+      setEditing(false);
+      toast(effChanged ? "Efficiency saved - applies to new trips" : "Car updated");
+    } catch (e) {
+      toast(e.message, "error");
+    }
   }
 
   async function onArchive() {
@@ -234,7 +252,7 @@ export function GroupDetail({ groupId }) {
           </h2>
           <p className="field-hint" style={{ marginTop: 0 }}>
             A saved fixed amount for the custom split method - pre-fills on every new{" "}
-            {isOwned ? "refuels" : "trips"}, still editable each time.
+            {isOwned ? "refuel" : "trip"}, still editable each time.
           </p>
           <div className="detail-panel people-list">
             {distinctPassengers.map((who) => (
@@ -328,7 +346,15 @@ function OverrideDefaultRow({ group, who, peopleMap, toast }) {
 
   async function save() {
     const trimmed = value.trim();
-    const amount = trimmed === "" ? null : Number(trimmed);
+    let amount = null;
+    if (trimmed !== "") {
+      const n = Number(trimmed);
+      if (!Number.isFinite(n) || n < 0) {
+        toast("Enter a valid amount (0 or more).", "error");
+        return;
+      }
+      amount = n;
+    }
     await setGroupOverrideDefault(group.id, who, amount);
     setEditing(false);
     toast(amount == null ? "Default cleared" : `Default saved: RM${amount} fixed`);
@@ -338,7 +364,7 @@ function OverrideDefaultRow({ group, who, peopleMap, toast }) {
     return (
       <div className="people-row">
         <span className="people-row__name">{whoName(who, peopleMap)}</span>
-        <div class="pax-dist-row__input" style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+        <div className="pax-dist-row__input" style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
           <span>RM</span>
           <input
             type="number"

@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
 import { Check, X } from "./Icons.jsx";
+import { haptic } from "../../lib/haptics.js";
 
 /* Swipe a passenger row to act on it. Left reveals a green "Settle" backing that
    fires onSettle on release (#8). Right reveals a red backing with an X that
@@ -41,12 +42,14 @@ export function SwipeSettle({ onSettle, onDelete, children }) {
     startX.current = null;
     const d = dxRef.current;
     if (d <= -THRESH && onSettle) {
+      haptic("medium");
       setOffset(-MAX);
       window.setTimeout(() => {
         onSettle();
         setOffset(0);
       }, 140);
     } else if (d >= THRESH && onDelete) {
+      haptic("light");
       setConfirming(true);
       setOffset(MAX);
     } else {

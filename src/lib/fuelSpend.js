@@ -8,6 +8,8 @@
    The core `computeFuelSpend` takes callbacks so it stays pure and
    testable; the dashboard adapts the entries into it. All money rounded to 2dp. */
 
+import { parseISODate, isFutureDate } from "./format.js";
+
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 export const FUEL_PERIODS = [
@@ -100,8 +102,10 @@ export function computeFuelSpend({
   period = "month",
   ref = new Date(),
 }) {
+  // Upcoming (future-dated) trips exclude them from spend.
   const inRange = (t, s, e) => {
-    const d = new Date(t.date);
+    if (isFutureDate(t.date, ref)) return false;
+    const d = parseISODate(t.date) || new Date(t.date);
     return d >= s && d < e;
   };
   const spendOf = (list) =>

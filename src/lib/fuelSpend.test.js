@@ -80,6 +80,16 @@ describe("computeFuelSpend", () => {
     expect(r.yourSpend).toBe(40);
   });
 
+  it("excludes upcoming (future-dated) trips from the current period", () => {
+    const trips = [
+      { id: "past", date: "2026-07-10", driverId: "u1", fuelCost: 100, riders: [] },
+      { id: "future", date: "2026-07-20", driverId: "u1", fuelCost: 999, riders: [] }, // after REF
+    ];
+    const r = computeFuelSpend(opts(trips, "month", REF));
+    expect(r.yourSpend).toBe(100);
+    expect(r.groupTotal).toBe(100);
+  });
+
   it("all time has no previous period (funny message, no percentage)", () => {
     const trips = [
       { id: "a", date: "2020-01-01", driverId: "u1", fuelCost: 10, riders: [] },

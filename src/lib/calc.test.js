@@ -497,3 +497,46 @@ describe("This month efficiency trend", () => {
     expect(pts).toHaveLength(0);
   });
 });
+
+/* ------------ Upcoming (future-dated) refuels held out of totals ------------ */
+describe("future-dated refuels are not in effect yet", () => {
+  const ref = new Date("2026-07-15T00:00:00");
+  const past = {
+    id: "p",
+    date: "2026-07-10",
+    totalCost: 30,
+    totalDistance: 100,
+    passengers: [{ who: alex, distanceAssigned: 100 }],
+  };
+  const future = {
+    id: "f",
+    date: "2026-07-20", // after ref -> upcoming
+    totalCost: 50,
+    totalDistance: 100,
+    passengers: [{ who: alex, distanceAssigned: 100 }],
+  };
+
+  it("balanceForWho ignores future-dated entries", () => {
+    expect(balanceForWho([past, future], alex, [], { ref }).owed).toBe(30);
+  });
+
+  it("dateless entries are always counted (never treated as future)", () => {
+    const dateless = { id: "d", totalCost: 20, totalDistance: 100, passengers: [{ who: alex, distanceAssigned: 100 }] };
+    expect(balanceForWho([dateless], alex, [], { ref }).owed).toBe(20);
+  });
+
+  it("thisMonthConsumption skips future entries in the current month", () => {
+    const c = thisMonthConsumption({
+      ownedGroups: [{ id: "g" }],
+      entriesByGroup: {
+        g: [
+          { id: "p", date: "2026-07-10", totalCost: 30, totalLiters: 15 },
+          { id: "f", date: "2026-07-20", totalCost: 50, totalLiters: 25 },
+        ],
+      },
+      ref,
+    });
+    expect(c.cost).toBe(30);
+    expect(c.liters).toBe(15);
+  });
+});

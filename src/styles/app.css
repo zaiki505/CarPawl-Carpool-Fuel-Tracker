@@ -25,6 +25,10 @@ body,
   margin: 0;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 body.z-body {
   min-height: 100dvh;
   font-size: var(--text-body-size);
@@ -1053,6 +1057,27 @@ body.light .toast[data-state="info"] { background: rgba(243, 232, 255, 0.9); }
 }
 .entry-card + .entry-card { margin-top: 0.6rem; }
 .entry-card:hover { border-color: var(--border-accent); }
+
+.entry-card--upcoming {
+  border: 2px dashed var(--border-accent);
+  opacity: 0.58;
+}
+.entry-card--upcoming:hover {
+  opacity: 1;
+}
+.upcoming-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.58rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tag-web);
+  background: var(--tag-web-bg);
+  border: 1px solid var(--tag-web-border);
+}
 .entry-card__head {
   width: 100%;
   text-align: left;

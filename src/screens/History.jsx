@@ -3,10 +3,11 @@ import { useAllData } from "../db/hooks.js";
 import { useEntryActions } from "../app/useEntryActions.js";
 import { EntryCard } from "../components/EntryCard.jsx";
 import { EmptyState, Segment } from "../components/ui/Primitives.jsx";
+import { ScreenLoading } from "../components/ui/ScreenLoading.jsx";
 import { Select } from "../components/ui/Select.jsx";
 import { DatePicker } from "../components/ui/DatePicker.jsx";
-import { share, paymentsFor } from "../lib/calc.js";
-import { formatMoney } from "../lib/format.js";
+import { entryShares, paymentsFor } from "../lib/calc.js";
+import { formatMoney, parseISODate, isFutureDate } from "../lib/format.js";
 import { whoKey, ME } from "../lib/identity.js";
 import { personName } from "../lib/names.js";
 import { ChevronDown } from "../components/ui/Icons.jsx";
@@ -41,12 +42,12 @@ export function History() {
           const has = (e.passengers || []).some((p) => whoSet.has(whoKey(p.who)));
           if (!has) return false;
         }
-        if (from && new Date(e.date) < new Date(from)) return false;
-        if (to && new Date(e.date) > new Date(to)) return false;
+        if (from && (parseISODate(e.date) || 0) < (parseISODate(from) || 0)) return false;
+        if (to && (parseISODate(e.date) || 0) > (parseISODate(to) || 0)) return false;
         return true;
       })
       .sort((a, b) => {
-        const d = new Date(b.date) - new Date(a.date);
+        const d = (parseISODate(b.date) || 0) - (parseISODate(a.date) || 0);
         return d !== 0 ? d : new Date(b.createdAt) - new Date(a.createdAt);
       });
   }, [data, ownership, groupFilter, whoSet, from, to]);
@@ -57,16 +58,18 @@ export function History() {
     let shareTot = 0;
     let paidTot = 0;
     for (const e of filtered) {
-      for (const p of e.passengers || []) {
-        if (!whoSet.has(whoKey(p.who))) continue;
-        shareTot += share(e, p.who);
+      if (isFutureDate(e.date)) continue; // upcoming refuels aren't counted in totals
+      const shares = entryShares(e); // once per entry, parallel to passengers
+      (e.passengers || []).forEach((p, i) => {
+        if (!whoSet.has(whoKey(p.who))) return;
+        shareTot += shares[i] || 0;
         paidTot += paymentsFor(e, p.who, data.payments);
-      }
+      });
     }
     return { shareTot, paidTot, outstanding: shareTot - paidTot };
   }, [data, filtered, whoSet, whoFilter]);
 
-  if (!data) return <div className="app-shell" />;
+  if (!data) return <ScreenLoading />;
 
   const { payments, peopleMap, people, nonOwnedGroups, groupMap } = data;
 
@@ -98,7 +101,10 @@ export function History() {
     data.entries.some((e) => (e.passengers || []).some((p) => p.who?.type === "me"));
   if (meOnAnyEntry) whoOptions.push({ value: whoKey(ME), label: "Me" });
   for (const p of people)
-    whoOptions.push({ value: whoKey({ type: "person", personId: p.id }), label: p.name });
+    whoOptions.push({
+      value: whoKey({ type: "person", personId: p.id }),
+      label: p.isArchived ? `${p.name} (archived)` : p.name,
+    });
 
   const activeFilterCount = [
     groupFilter !== "all",

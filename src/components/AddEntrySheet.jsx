@@ -17,9 +17,10 @@ import {
   shareOfRow,
   entryTotalBillable,
   share,
+  driverCompBase,
 } from "../lib/calc.js";
-import { SPLIT_METHOD_OPTIONS, SPLIT_METHOD_HINTS } from "../lib/splitMethods.js";
-import { formatMoney, todayISODate, parseNum } from "../lib/format.js";
+import { SPLIT_METHOD_OPTIONS, splitMethodHint } from "../lib/splitMethods.js";
+import { formatMoney, todayISODate, parseNum, isFutureDate } from "../lib/format.js";
 import { whoName } from "../lib/names.js";
 import { ME, person as mkPerson, whoKey } from "../lib/identity.js";
 import { useApp } from "../app/AppContext.jsx";
@@ -71,6 +72,11 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
   const [kmplInput, setKmplInput] = useState("");
   // A hand-typed km/L counts as a real (measured) reading for the trend chart.
   const [kmplTouched, setKmplTouched] = useState(false);
+  // Whether any fuel figure (cost/liters/distance/price/km-L) was edited this
+  // session. When editing/duplicating and nothing was touched, we save the
+  // entry's stored totals verbatim rather than re-deriving them cause re-deriving
+  // from rounded display values would drift totalDistance a little each save.
+  const [fuelEdited, setFuelEdited] = useState(false);
   // passengers: { who, distance, custom, override } - custom tracks manual
   // distance edits, override is a string ("" = auto-split, Compensate only)
   const [passengers, setPassengers] = useState([]);
@@ -83,7 +89,6 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
   const [title, setTitle] = useState("");
   const [showAllPeople, setShowAllPeople] = useState(false);
   const [newPersonName, setNewPersonName] = useState("");
-  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   // Split method + driver-comp extras
   const [splitMethod, setSplitMethod] = useState("distance");
@@ -110,7 +115,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
       // Reconstruct km/L from the stored totals (distance/liters); reproduces
       // the exact same totals under the new "cost primary + km/L" derivation.
       const srcKmpl =
-        src.totalLiters > 0 ? round2(src.totalDistance / src.totalLiters) : src.fuelPricePerLiter && 0;
+        src.totalLiters > 0 ? round2(src.totalDistance / src.totalLiters) : 0;
       setKmplInput(
         srcKmpl ? String(srcKmpl) : String(groups.find((g) => g.id === src.groupId)?.defaultKmPerLiter || "")
       );
@@ -217,6 +222,17 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
     : share(previewEntry, ME);
   const bannerLabel = isOwned ? "You'll collect" : "Your share to pay";
 
+  // Custom split can over-collect: fixed (pinned) amounts are never reduced
+  // even when their sum exceeds this trip's actual cost (see calc.js customRawShare, the pool floors at 0). 
+  // Flag it here instead of changing the math.
+  const overrideSum = previewEntry.passengers.reduce(
+    (s, p) => s + (p.manualOverride != null ? p.manualOverride : 0),
+    0
+  );
+  const overCollectAmount = isDriverComp
+    ? round2(overrideSum - driverCompBase(previewEntry))
+    : 0;
+
   // --- passenger candidates ---
   const usualWhoKeys = useMemo(() => {
     const keys = new Set();
@@ -295,7 +311,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
       setNewPersonName("");
       togglePassenger(mkPerson(p.id));
     } catch (e) {
-      setError(e.message);
+      toast(e.message, "error");
     }
   }
 
@@ -306,16 +322,60 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
     // typed a custom one, keep it - they clearly meant it).
     if (!kmplTouched) {
       setKmplInput(String(groups.find((g) => g.id === id)?.defaultKmPerLiter || ""));
+      // Silently changes the effective km/L the preview derives from
+      // (via kmplNum's fallback), same as if the user had typed into that cell. 
+      // Otherwise editing/duplicating an entry, then switching vehicles, would save() via the
+      // keepStored path using the OLD car's totals while the sheet is
+      // visibly previewing the NEW car's derived numbers.
+      setFuelEdited(true);
     }
   }
 
   async function save() {
-    setError("");
-    if (!groupId) return setError("Pick a vehicle first.");
-    if (!(parseNum(primaryValue) > 0)) {
-      return setError(`Enter a cost, liters or distance for this ${isOwned ? "refuel" : "trip"}.`);
+    if (!groupId) {
+      toast("Pick a vehicle first.", "error");
+      return;
     }
-    if (!date) return setError("Pick a date.");
+    if (!(parseNum(primaryValue) > 0)) {
+      toast(`Enter a cost, liters or distance for this ${isOwned ? "refuel" : "trip"}.`, "error");
+      return;
+    }
+    if (!date) {
+      toast("Pick a date.", "error");
+      return;
+    }
+    // When editing/duplicating without touching any fuel figure, keep the
+    // entry's stored totals exactly to prevent nudge of totalDistance a fraction each time. 
+    // Computed early so the fuel-price check below can skip entries whose fuel data isn't even
+    // being recomputed.
+    const keepStored = src && !fuelEdited;
+    // A real fuel price is required whenever the fuel figures ARE being (re)derived
+    if (!keepStored && !(parseNum(fuelPrice) > 0)) {
+      toast("Enter a fuel price first.", "error");
+      return;
+    }
+    if (isDriverComp) {
+      const tollsNum = parseNum(tolls);
+      const parkingNum = parseNum(parking);
+      const maintNum = parseNum(maintenancePct);
+      if (tollsNum < 0 || parkingNum < 0 || maintNum < 0) {
+        toast("Tolls, parking and maintenance markup can't be negative.", "error");
+        return;
+      }
+    }
+    if (syncedPassengers.some((p) => parseNum(p.distance) < 0)) {
+      toast("A passenger's distance can't be negative.", "error");
+      return;
+    }
+    if (
+      isDriverComp &&
+      syncedPassengers.some(
+        (p) => p.override !== "" && p.override != null && parseNum(p.override) < 0
+      )
+    ) {
+      toast("A fixed amount can't be negative.", "error");
+      return;
+    }
 
     const payloadPassengers = syncedPassengers.map((p) => ({
       who: p.who,
@@ -324,15 +384,30 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
         isDriverComp && p.override !== "" && p.override != null ? parseNum(p.override) : null,
     }));
 
+    const finalTotals = keepStored
+      ? {
+          totalCost: Number(src.totalCost) || 0,
+          totalLiters: Number(src.totalLiters) || 0,
+          totalDistance: Number(src.totalDistance) || 0,
+          fuelPricePerLiter: Number(src.fuelPricePerLiter) || 0,
+        }
+      : {
+          totalCost: totals.totalCost,
+          totalLiters: totals.totalLiters,
+          totalDistance: totals.totalDistance,
+          fuelPricePerLiter: totals.fuelPricePerLiter,
+        };
+    const finalMeasured = keepStored ? Boolean(src.hasMeasuredEfficiency) : hasMeasured;
+
     const payload = {
       groupId,
       date,
       title: title.trim() || null,
-      totalCost: totals.totalCost,
-      totalLiters: totals.totalLiters,
-      totalDistance: totals.totalDistance,
-      fuelPricePerLiter: totals.fuelPricePerLiter,
-      hasMeasuredEfficiency: hasMeasured,
+      totalCost: finalTotals.totalCost,
+      totalLiters: finalTotals.totalLiters,
+      totalDistance: finalTotals.totalDistance,
+      fuelPricePerLiter: finalTotals.fuelPricePerLiter,
+      hasMeasuredEfficiency: finalMeasured,
       splitMethod,
       customRemainderSplit: isDriverComp ? customRemainderSplit : "equal",
       tolls: isDriverComp ? parseNum(tolls) || 0 : 0,
@@ -366,7 +441,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
       onClose();
     } catch (e) {
       // 8: blocked passenger removal comes back with a clear message.
-      setError(e.message);
+      toast(e.message, "error");
       setBusy(false);
     }
   }
@@ -383,6 +458,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
   const editField = (field) => (v) => {
     setPrimaryField(field);
     setPrimaryValue(v);
+    setFuelEdited(true);
   };
 
   return (
@@ -458,7 +534,10 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
               min="0"
               step="0.01"
               value={fuelPrice}
-              onChange={(e) => setFuelPrice(e.target.value)}
+              onChange={(e) => {
+                setFuelPrice(e.target.value);
+                setFuelEdited(true);
+              }}
             />
           </Field>
           
@@ -491,7 +570,10 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
               value={kmplInput}
               onChange={(v) => {
                 setKmplInput(v);
-                setKmplTouched(true);
+                // Only a positive value counts as a measured reading; clearing
+                // the field falls back to the car's estimate, prevent from plotting a fake trend point.
+                setKmplTouched(parseNum(v) > 0);
+                setFuelEdited(true);
               }}
               accent={kmplTouched}
             />
@@ -503,7 +585,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
           <div className="form-section-head">Split</div>
           {/* Split method */}
           {group && (
-            <Field label="How to split" hint={SPLIT_METHOD_HINTS[splitMethod]}>
+            <Field label="How to split" hint={splitMethodHint(splitMethod, { isOwned })}>
               <Segment
                 value={splitMethod}
                 onChange={setSplitMethod}
@@ -677,6 +759,13 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
                 </div>
               )}
 
+              {isDriverComp && overCollectAmount > 0.005 && (
+                <div className="field-hint" style={{ color: "var(--tier-intermediate)" }}>
+                  Fixed amounts exceed this trip's costs by {formatMoney(overCollectAmount)} - you'll
+                  collect more than you spent.
+                </div>
+              )}
+
               {isDriverComp && parseNum(tolls) > 0 && (
                 <Field
                   label="Who was present for tolls?"
@@ -767,7 +856,14 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
           <div className="form-section-head">Details</div>
           {/* Date + title */}
           <div className="field-inline">
-            <Field label="Date">
+            <Field
+              label="Date"
+              hint={
+                isFutureDate(date)
+                  ? `Scheduled ${isOwned ? "refuel" : "trip"} - it won't count toward balances or spend until this date.`
+                  : undefined
+              }
+            >
               <DatePicker value={date} onChange={setDate} />
             </Field>
             <Field label="Title (optional)">
@@ -779,12 +875,6 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
               />
             </Field>
           </div>
-
-          {error && (
-            <div className="form-status is-visible" data-state="error">
-              {error}
-            </div>
-          )}
         </div>
       )}
     </Sheet>

@@ -1,12 +1,10 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
-  share,
+  entryShares,
   outstanding,
   statusOf,
   paymentsFor,
   entryEfficiencyDisplay,
-  entryTotalPaid,
-  entryTotalBillable,
   splitMethodOf,
 } from "../lib/calc.js";
 import {
@@ -17,6 +15,7 @@ import {
   formatLiters,
   formatKm,
   formatKmpl,
+  isFutureDate,
 } from "../lib/format.js";
 import { whoName } from "../lib/names.js";
 import { whoKey, whoEquals, isMe } from "../lib/identity.js";
@@ -56,8 +55,20 @@ export function EntryCard({
   defaultExpanded = false,
 }) {
   const [open, setOpen] = useState(defaultExpanded);
-  const [showAllPay, setShowAllPay] = useState(false);
+  // whoKey -> bool: which passengers have their full payment history expanded.
+  // Per-passenger so one rider's "+N more" doesn't expand everyone's list.
+  const [expandedPay, setExpandedPay] = useState({});
   const [dissolving, setDissolving] = useState(null); // whoKey mid-dissolve
+
+  // The entry's cent-rounded shares, computed once and indexed by whoKey, so
+  // the per-passenger renders below don't each re-derive the whole entry.
+  const shareByWho = useMemo(() => {
+    const m = new Map();
+    const arr = entryShares(entry);
+    (entry.passengers || []).forEach((p, i) => m.set(whoKey(p.who), arr[i] || 0));
+    return m;
+  }, [entry]);
+  const shareOf = (who) => shareByWho.get(whoKey(who)) || 0;
 
   // Thanos-dissolve their payment chips, then wipe the records once the dust
   // settles so the row doesn't flicker before the animation plays.
@@ -72,6 +83,9 @@ export function EntryCard({
   const allPassengers = entry.passengers || [];
   const method = splitMethodOf(entry);
   const effDisp = entryEfficiencyDisplay(entry);
+  // A future-dated refuel is "upcoming" - not yet counted in any balance or
+  // spend total (see calc.balanceForWho / fuelSpend), just shown as scheduled.
+  const upcoming = isFutureDate(entry.date);
 
   // Passengers we actually show/count (the History filter applied). In your own
   // vehicle your "Me" share is billed and already covered - it counts toward
@@ -82,11 +96,11 @@ export function EntryCard({
   const otherPax = passengers.filter((p) => !(ownedByMe && isMe(p.who)));
   const meShare = passengers
     .filter((p) => ownedByMe && isMe(p.who))
-    .reduce((sum, p) => sum + share(entry, p.who), 0);
+    .reduce((sum, p) => sum + shareOf(p.who), 0);
 
   // Billed includes your own share; collected counts that share as already
   // covered (you paid the pump) plus real passenger payments.
-  const billable = passengers.reduce((sum, p) => sum + share(entry, p.who), 0);
+  const billable = passengers.reduce((sum, p) => sum + shareOf(p.who), 0);
   const collected =
     otherPax.reduce((sum, p) => sum + paymentsFor(entry, p.who, entryPayments), 0) +
     meShare;
@@ -110,7 +124,7 @@ export function EntryCard({
       : null;
 
   return (
-    <div className="entry-card">
+    <div className={"entry-card" + (upcoming ? " entry-card--upcoming" : "")}>
       <button
         className="entry-card__head"
         data-no-pop
@@ -141,6 +155,7 @@ export function EntryCard({
             >
               {ownedByMe ? "You" : ownerName || "Someone"}
             </span>
+            {upcoming && <span className="upcoming-pill">Upcoming</span>}
           </div>
         </div>
         <div className="list-row__trailing">
@@ -192,7 +207,7 @@ export function EntryCard({
             <div className="pax-list">
               {passengers.map((p, i) => {
                 const meInOwned = ownedByMe && isMe(p.who);
-                const s = share(entry, p.who);
+                const s = shareOf(p.who);
                 // your own share in your own vehicle: reference only.
                 if (meInOwned) {
                   return (
@@ -215,8 +230,12 @@ export function EntryCard({
                 const theirPayments = entryPayments.filter((pm) =>
                   whoEquals(pm.who, p.who)
                 );
-                const visiblePay = showAllPay ? theirPayments : theirPayments.slice(0, 2);
-                const canSettle = onQuickSettle && out > 0.005;
+                const showThisPay = !!expandedPay[whoKey(p.who)];
+                const visiblePay = showThisPay ? theirPayments : theirPayments.slice(0, 2);
+                // Upcoming (future-dated) refuels aren't in effect yet - it
+                // shares don't count toward balances (see calc.balanceForWho).
+                // Clearing an already-recorded payment stays available.
+                const canSettle = onQuickSettle && out > 0.005 && !upcoming;
                 const canClear = onClearPayments && theirPayments.length > 0;
                 const payIds = theirPayments.map((pm) => pm.id);
                 const rowEl = (
@@ -243,7 +262,7 @@ export function EntryCard({
                               : "Paid"
                           }
                         />
-                        {onRecordPayment && (
+                        {onRecordPayment && !upcoming && (
                           <button
                             className="mini-btn"
                             type="button"
@@ -295,9 +314,14 @@ export function EntryCard({
                           <button
                             className="see-more-btn"
                             type="button"
-                            onClick={() => setShowAllPay((v) => !v)}
+                            onClick={() =>
+                              setExpandedPay((mp) => ({
+                                ...mp,
+                                [whoKey(p.who)]: !mp[whoKey(p.who)],
+                              }))
+                            }
                           >
-                            {showAllPay
+                            {showThisPay
                               ? "Show less"
                               : `+${theirPayments.length - 2} more payment${
                                   theirPayments.length - 2 === 1 ? "" : "s"

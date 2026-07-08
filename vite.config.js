@@ -56,7 +56,11 @@ export default defineConfig({
     }),
   ],
   test: {
+    // Lib tests run in fast node env; component tests opt into happy-dom via a
+    // `// @vitest-environment happy-dom` docblock at the top of the file.
     environment: "node",
-    include: ["src/**/*.test.js"],
+    globals: true,
+    include: ["src/**/*.test.{js,jsx}"],
+    setupFiles: ["src/test/setup.js"],
   },
 });

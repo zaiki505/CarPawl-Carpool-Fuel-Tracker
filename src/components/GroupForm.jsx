@@ -27,7 +27,6 @@ export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false,
   const [newPersonName, setNewPersonName] = useState("");
   const [splitMethod, setSplitMethod] = useState(DEFAULTS.defaultSplitMethod);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
 
   const askOwnership = mode !== "onboard";
 
@@ -39,18 +38,21 @@ export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false,
       setOwnerPersonId(p.id);
       setNewPersonName("");
     } catch (e) {
-      setError(e.message);
+      toast(e.message, "error");
     }
   }
 
   async function save() {
-    setError("");
     if (!name.trim()) {
-      setError("Give this car a name.");
+      toast("Give this car a name.", "error");
       return;
     }
     if (askOwnership && ownerType === "person" && !ownerPersonId) {
-      setError("Pick who owns this car (or add them).");
+      toast("Pick who owns this car (or add them).", "error");
+      return;
+    }
+    if (!(Number(kmpl) > 0)) {
+      toast("Fuel efficiency must be greater than 0.", "error");
       return;
     }
     setBusy(true);
@@ -79,7 +81,7 @@ export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false,
       );
       onDone?.(group);
     } catch (e) {
-      setError(e.message);
+      toast(e.message, "error");
       setBusy(false);
     }
   }
@@ -200,12 +202,6 @@ export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false,
             options={SPLIT_METHOD_OPTIONS}
           />
         </Field>
-      )}
-
-      {error && (
-        <div className="form-status is-visible" data-state="error">
-          {error}
-        </div>
       )}
 
       <button className="cta-primary btn-block" type="button" onClick={save} disabled={busy}>

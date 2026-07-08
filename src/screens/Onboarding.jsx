@@ -51,17 +51,21 @@ function PrefsStep({ onFinish }) {
 
   async function finish(save) {
     setBusy(true);
-    if (save) {
-      const c = CURRENCIES.find((x) => x.code === currency) || CURRENCIES[0];
-      const p = Number(price);
-      await updateSettings({
-        currency: c.code,
-        currencySymbol: c.symbol,
-        defaultFuelPricePerLiter: p > 0 ? p : DEFAULTS.defaultFuelPricePerLiter,
-      });
+    try {
+      if (save) {
+        const c = CURRENCIES.find((x) => x.code === currency) || CURRENCIES[0];
+        const p = Number(price);
+        await updateSettings({
+          currency: c.code,
+          currencySymbol: c.symbol,
+          defaultFuelPricePerLiter: p > 0 ? p : DEFAULTS.defaultFuelPricePerLiter,
+        });
+      }
+      await markOnboarded();
+      onFinish?.();
+    } catch {
+      setBusy(false);
     }
-    await markOnboarded();
-    onFinish?.();
   }
 
   return (

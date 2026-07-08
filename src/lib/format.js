@@ -12,10 +12,6 @@ export function setFormatConfig(settings) {
   if (settings.dateFormat) _dateFormat = settings.dateFormat;
 }
 
-export function getCurrencySymbol() {
-  return _symbol;
-}
-
 /** "RM30.00" - money to 2dp with the configured currency symbol. */
 export function formatMoney(n) {
   const v = Number(n) || 0;
@@ -46,11 +42,31 @@ export function formatKmpl(n) {
 
 export const DATE_FORMATS = ["DD-MM-YYYY", "MM-DD-YYYY", "YYYY-MM-DD", "DD/MM/YYYY"];
 
+/** Parse a stored date. Full ISO timestamps (createdAt etc.) pass through to the native parser. 
+ * Returns null for blank/invalid input. */
+export function parseISODate(value) {
+  if (value == null || value === "") return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value).trim());
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** True when an ISO date is strictly AFTER today (local). */
+export function isFutureDate(dateStr, ref = new Date()) {
+  const d = parseISODate(dateStr);
+  if (!d) return false;
+  const today = new Date(ref);
+  today.setHours(0, 0, 0, 0);
+  return d.getTime() > today.getTime();
+}
+
 /** ISO date -> the user's configured date format. */
 export function formatDate(dateStr) {
   if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return String(dateStr);
+  const d = parseISODate(dateStr);
+  if (!d) return String(dateStr);
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const yyyy = d.getFullYear();
@@ -70,8 +86,8 @@ export function formatDate(dateStr) {
 /** Short, friendly date like "3 Jul" for dense lists. */
 export function formatDateShort(dateStr) {
   if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return String(dateStr);
+  const d = parseISODate(dateStr);
+  if (!d) return String(dateStr);
   const months = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",

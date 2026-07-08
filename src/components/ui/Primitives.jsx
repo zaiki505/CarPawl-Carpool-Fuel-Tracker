@@ -121,12 +121,11 @@ export function Segment({ options, value, onChange }) {
   const [moving, setMoving] = React.useState(false);
   const first = React.useRef(true);
 
+  // offsetLeft/offsetWidth = the option's layout box relative to the positioned.segment (immune to the uiPop click-squish transform).
   React.useLayoutEffect(() => {
     const el = btnRefs.current[value];
     if (!el) return;
-    const p = el.parentElement.getBoundingClientRect();
-    const r = el.getBoundingClientRect();
-    setInd({ left: r.left - p.left, width: r.width });
+    setInd({ left: el.offsetLeft, width: el.offsetWidth });
     if (!first.current) {
       setMoving(true);
       const t = setTimeout(() => setMoving(false), 520);
@@ -138,10 +137,7 @@ export function Segment({ options, value, onChange }) {
   React.useEffect(() => {
     const onResize = () => {
       const el = btnRefs.current[value];
-      if (!el) return;
-      const p = el.parentElement.getBoundingClientRect();
-      const r = el.getBoundingClientRect();
-      setInd({ left: r.left - p.left, width: r.width });
+      if (el) setInd({ left: el.offsetLeft, width: el.offsetWidth });
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
