@@ -6,6 +6,7 @@ import {
   createPerson,
   renamePerson,
   removePerson,
+  personHasHistory,
   restorePerson,
   restoreGroup,
   clearPerson,
@@ -126,15 +127,27 @@ export function Settings() {
   }
 
   async function archivePerson(p) {
+    let hasHistory = true;
+    try {
+      hasHistory = await personHasHistory(p.id);
+    } catch {
+      /* if the check fails, fall back to the safe "archive" wording */
+    }
     const ok = await askConfirm({
-      title: `Archive ${p.name}?`,
-      body: "They'll disappear from pickers but stay on any past entries. You can restore them here anytime.",
-      confirmLabel: "Archive",
+      title: hasHistory ? `Archive ${p.name}?` : `Remove ${p.name}?`,
+      body: hasHistory
+        ? "They'll be hidden from pickers but stay on every past entry they're on. You can restore them here anytime."
+        : "They have no history yet, so they'll be deleted. You can always add them again later.",
+      confirmLabel: hasHistory ? "Archive" : "Remove",
       danger: true,
     });
     if (!ok) return;
-    const res = await removePerson(p.id);
-    toast(res === "archived" ? `${p.name} archived` : `${p.name} removed`);
+    try {
+      const res = await removePerson(p.id);
+      toast(res === "archived" ? `${p.name} archived` : `${p.name} removed`);
+    } catch (e) {
+      toast(e.message, "error");
+    }
   }
 
   async function onRestoreGroup(g) {
@@ -691,8 +704,14 @@ function PersonRow({ person, onArchive, onToast }) {
         <button className="mini-btn" type="button" onClick={() => setEditing(true)}>
           <Pencil size={13} /> Rename
         </button>
-        <button className="mini-btn mini-btn--danger" type="button" onClick={onArchive}>
-          <Archive size={13} />
+        <button
+          className="mini-btn mini-btn--danger"
+          type="button"
+          onClick={onArchive}
+          aria-label={`Archive or remove ${person.name}`}
+          title="Archive (or remove if unused)"
+        >
+          <Archive size={13} /> Archive
         </button>
       </div>
     </div>

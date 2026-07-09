@@ -761,8 +761,9 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
 
               {isDriverComp && overCollectAmount > 0.005 && (
                 <div className="field-hint" style={{ color: "var(--tier-intermediate)" }}>
-                  Fixed amounts exceed this trip's costs by {formatMoney(overCollectAmount)} - you'll
-                  collect more than you spent.
+                  {isOwned
+                    ? `Fixed amounts exceed this refuel's cost by ${formatMoney(overCollectAmount)} - you'll collect more than you spent.`
+                    : `Fixed amounts exceed this trip's fuel cost by ${formatMoney(overCollectAmount)} - the passengers would pay more than it actually cost.`}
                 </div>
               )}
 

@@ -115,18 +115,23 @@ export function GroupDetail({ groupId }) {
 
   async function onArchive() {
     const hasHistory = entries.length > 0;
+    const noun = isOwned ? "car" : "carpool";
     const ok = await askConfirm({
-      title: `Archive ${group.name}?`,
+      title: hasHistory ? `Archive ${group.name}?` : `Remove ${group.name}?`,
       body: hasHistory
         ? "It'll be hidden from pickers and lists but all its history stays intact. You can restore it from Settings → Archived."
-        : "This car has no history yet, so it'll be removed. You can always add it again.",
+        : `This ${noun} has no history yet, so it'll be deleted. You can always add it again later.`,
       confirmLabel: hasHistory ? "Archive" : "Remove",
       danger: true,
     });
     if (!ok) return;
-    const result = await removeGroup(group.id);
-    toast(result === "archived" ? `${group.name} archived` : `${group.name} removed`);
-    back();
+    try {
+      const result = await removeGroup(group.id);
+      toast(result === "archived" ? `${group.name} archived` : `${group.name} removed`);
+      back();
+    } catch (e) {
+      toast(e.message, "error");
+    }
   }
 
   async function onExport() {
@@ -307,7 +312,8 @@ export function GroupDetail({ groupId }) {
           Danger zone
         </h2>
         <button className="action-btn btn-block btn-danger" type="button" onClick={onArchive}>
-          <Archive size={16} /> Archive this {isOwned ? "car" : "carpool"}
+          <Archive size={16} /> {entries.length > 0 ? "Archive" : "Remove"} this{" "}
+          {isOwned ? "car" : "carpool"}
         </button>
       </section>
 

@@ -847,8 +847,8 @@ body.light .toast[data-state="info"] { background: rgba(243, 232, 255, 0.9); }
 .segment__indicator {
   position: absolute;
   z-index: 0;
-  top: 0.3rem;
-  bottom: 0.3rem;
+  top: 0.2rem;
+  bottom: 0.2rem;
   border-radius: var(--radius-pill);
   background: var(--highlight);
   box-shadow: var(--shadow-accent-soft);

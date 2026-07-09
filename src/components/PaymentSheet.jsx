@@ -52,6 +52,18 @@ export function PaymentSheet({ entry, who, payment, peopleMap, ownedByMe, onClos
       toast("Enter how much they paid.", "error");
       return;
     }
+    // Overpayment is allowed (it becomes credit),
+    // amount owed on this fill-up is `out`, so anything beyond it is extra.
+    const extra = amt - out;
+    if (extra > 0.005) {
+      const owedLabel = out > 0.005 ? formatMoney(out) : "nothing";
+      const ok = await askConfirm({
+        title: "More than they owe?",
+        body: `${name} owes ${owedLabel} on this ${ownedByMe ? "refuel" : "trip"}. Recording ${formatMoney(amt)} leaves ${formatMoney(extra)} as credit toward future ${ownedByMe ? "refuels" : "trips"}. Record anyway?`,
+        confirmLabel: "Record anyway",
+      });
+      if (!ok) return;
+    }
     setBusy(true);
     try {
       if (editing) {

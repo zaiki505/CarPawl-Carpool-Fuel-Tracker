@@ -25,6 +25,23 @@ import { setFormatConfig } from "./lib/format.js";
 applyStoredTheme();
 installUiPop();
 
+// Ask the browser to keep the IndexedDB data durably instead of treating it as
+// "best-effort", which browsers are allowed to evict or after inactivity
+if (navigator.storage?.persist) {
+  navigator.storage
+    .persisted()
+    .then((already) => (already ? true : navigator.storage.persist()))
+    .then((persisted) => {
+      if (!persisted) {
+        console.warn(
+          "CarPawl: storage is not persistent - the browser may evict local data. " +
+            "Installing the app (Add to Home Screen) or granting storage permission makes it more durable."
+        );
+      }
+    })
+    .catch(() => {});
+}
+
 ensureSettings().then(setFormatConfig);
 
 ReactDOM.createRoot(document.getElementById("root")).render(
