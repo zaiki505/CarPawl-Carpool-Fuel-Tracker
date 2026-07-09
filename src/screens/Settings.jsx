@@ -893,11 +893,7 @@ function DriveStatus({ syncStatus, settings, connecting, onConnect, onDisconnect
           disabled={isSyncing}
           title="Disconnect Drive"
         >
-          {isSyncing ? (
-            <><Loader2 size={13} className="spin" /> <span className="mini-btn__label">Syncing..</span></>
-          ) : (
-            <><CloudOff size={13} /> <span className="mini-btn__label">Disconnect</span></>
-          )}
+          <CloudOff size={13} /> <span className="mini-btn__label">Disconnect</span>
         </button>
       </div>
 

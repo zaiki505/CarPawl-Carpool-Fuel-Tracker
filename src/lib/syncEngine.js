@@ -65,6 +65,12 @@ export function useSyncStatus() {
 
 // ---- Core sync ----------------------------------------------------------
 
+async function hashSnapshot(obj) {
+  const str = JSON.stringify(obj || {});
+  const buf = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 /**
  * Run a full sync cycle:
  *   1. buildSnapshot (local)
@@ -88,25 +94,60 @@ export async function syncNow({ allowInteractive = false } = {}) {
   _setState("syncing", { error: null });
 
   try {
-    // 1. Read local state
+    const s = await readSettings();
+
+    // 1. Read local state and hash it
     const local = await buildSnapshot();
+    const localHash = await hashSnapshot(local);
 
-    // 2. Download remote (null if first sync from this account)
-    const { snapshot: remote, etag } = await download();
+    // 2. Download remote metadata (skips payload if ETag matches)
+    const { snapshot: remote, etag, notModified } = await download(s.gdriveEtag);
 
-    // 3. Merge (coerce null → {} so mergeSnapshots' default-param works;
-    //    download() returns null when no file exists in Drive yet)
-    const merged = mergeSnapshots(local, remote || {}, { now: Date.now() });
+    // Early exit if nothing changed anywhere
+    if (notModified && localHash === s.lastLocalHash) {
+      const now = new Date().toISOString();
+      await updateSettings({ lastSyncedAt: now });
+      _setState("done", { lastSyncedAt: now, error: null });
+      return;
+    }
 
-    // 4. Apply merged state locally
-    await applySnapshot(merged);
+    // 3. Merge
+    let merged;
+    if (notModified) {
+      // Remote matches; no other devices have written.
+      // So local is the winner. Prune tombstones by merging local with itself.
+      merged = mergeSnapshots(local, local, { now: Date.now() });
+    } else {
+      merged = mergeSnapshots(local, remote || {}, { now: Date.now() });
+      // 4. Apply merged state locally
+      await applySnapshot(merged);
+    }
 
-    // 5. Upload merged state to Drive (etag-guarded; handles 412 internally)
-    await upload(merged, etag);
+    const mergedHash = await hashSnapshot(merged);
+
+    // 5. Upload merged state to Drive
+    // Skip upload if we didn't add any new local changes to the remote state.
+    let newEtag = etag;
+    let needUpload = false;
+    
+    if (notModified) {
+      needUpload = true; // We know local changed because we didn't early exit
+    } else {
+      const remoteHash = await hashSnapshot(remote);
+      needUpload = (mergedHash !== remoteHash);
+    }
+
+    if (needUpload) {
+      newEtag = await upload(merged, etag);
+    }
 
     // 6. Record success
     const now = new Date().toISOString();
-    await updateSettings({ lastSyncedAt: now });
+    await updateSettings({ 
+      lastSyncedAt: now,
+      gdriveEtag: newEtag,
+      lastLocalHash: mergedHash
+    });
     _setState("done", { lastSyncedAt: now, error: null });
   } catch (err) {
     const msg =

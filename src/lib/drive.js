@@ -229,27 +229,35 @@ async function resolveFileId() {
 
 /**
  * Download the sync snapshot from Drive.
- * Returns `{ snapshot, etag }` or `{ snapshot: null, etag: null }` if no file
+ * Returns `{ snapshot, etag, notModified }` or `{ snapshot: null, etag: null, notModified: false }` if no file
  * exists yet (first sync from this account).
  */
-export async function download() {
+export async function download(cachedEtag = null) {
   const token = await getToken();
   const fileId = await resolveFileId();
 
   if (!fileId) {
     // No file in Drive yet - this is the first sync.
-    return { snapshot: null, etag: null };
+    return { snapshot: null, etag: null, notModified: false };
   }
+
+  const headers = { Authorization: `Bearer ${token.access_token}` };
+  if (cachedEtag) headers["If-None-Match"] = cachedEtag;
 
   const res = await fetch(
     `${DRIVE_API}/files/${fileId}?alt=media`,
-    { headers: { Authorization: `Bearer ${token.access_token}` } }
+    { headers }
   );
+
+  if (res.status === 304) {
+    // Remote file hasn't changed since our last sync
+    return { snapshot: null, etag: cachedEtag, notModified: true };
+  }
 
   if (res.status === 404) {
     // File was deleted externally; clear the cached ID.
     await updateSettings({ gdriveFileId: null });
-    return { snapshot: null, etag: null };
+    return { snapshot: null, etag: null, notModified: false };
   }
 
   if (!res.ok) throw new Error(`Drive download failed: ${res.status}`);
@@ -261,7 +269,7 @@ export async function download() {
   } catch {
     throw new Error("Drive file is corrupted or not valid JSON");
   }
-  return { snapshot, etag };
+  return { snapshot, etag, notModified: false };
 }
 
 // ---- Upload -------------------------------------------------------------
@@ -307,7 +315,7 @@ async function _create(accessToken, body) {
     `--${boundary}--`;
 
   const res = await fetch(
-    `${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id`,
+    `${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id,etag`,
     {
       method: "POST",
       headers: {
@@ -321,7 +329,7 @@ async function _create(accessToken, body) {
   if (!res.ok) throw new Error(`Drive create failed: ${res.status}`);
   const data = await res.json();
   if (data.id) await updateSettings({ gdriveFileId: data.id });
-  return data.id;
+  return data.etag || res.headers.get("ETag") || res.headers.get("etag");
 }
 
 /** PATCH an existing file. On 412 conflict, optionally re-download, re-merge, retry. */
@@ -333,7 +341,7 @@ async function _patch(accessToken, fileId, body, etag, retryOnConflict) {
   if (etag) headers["If-Match"] = etag;
 
   const res = await fetch(
-    `${DRIVE_UPLOAD_API}/files/${fileId}?uploadType=media`,
+    `${DRIVE_UPLOAD_API}/files/${fileId}?uploadType=media&fields=id,etag`,
     { method: "PATCH", headers, body }
   );
 
@@ -361,4 +369,9 @@ async function _patch(accessToken, fileId, body, etag, retryOnConflict) {
   }
 
   if (!res.ok) throw new Error(`Drive upload failed: ${res.status}`);
+  
+  const etagHeader = res.headers.get("ETag") || res.headers.get("etag");
+  let data = {};
+  try { data = await res.json(); } catch(e) {}
+  return data.etag || etagHeader;
 }
