@@ -22,6 +22,33 @@ db.version(1).stores({
   settings: "id",
 });
 
+/* v2 - two-way sync support.
+   - `deletions` is the tombstone log: one row per hard-deleted record so a
+     delete on one device propagates instead of the record resurrecting from
+     another device's snapshot. Compound primary key [table+id] means a repeat
+     delete of the same record upserts rather than duplicating.
+   - Backfill `updatedAt` (used for last-write-wins) onto pre-existing rows that
+     never carried one; fall back to createdAt so their age is preserved. */
+db.version(2)
+  .stores({
+    people: "id, isArchived, createdAt",
+    groups: "id, ownerType, ownerPersonId, isArchived, createdAt",
+    entries: "id, groupId, date, createdAt",
+    payments: "id, entryId, date, createdAt",
+    settings: "id",
+    deletions: "[table+id], table, deletedAt",
+  })
+  .upgrade(async (tx) => {
+    const backfill = (row) => {
+      if (!row.updatedAt) row.updatedAt = row.createdAt || null;
+    };
+    await tx.table("people").toCollection().modify(backfill);
+    await tx.table("groups").toCollection().modify(backfill);
+    await tx.table("entries").toCollection().modify(backfill);
+    await tx.table("payments").toCollection().modify(backfill);
+    await tx.table("settings").toCollection().modify(backfill);
+  });
+
 export const SETTINGS_ID = "app";
 
 export const DEFAULTS = Object.freeze({
@@ -66,7 +93,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
 export async function ensureSettings() {
   let s = await db.settings.get(SETTINGS_ID);
   if (!s) {
-    s = { ...DEFAULT_SETTINGS, createdAt: nowISO() };
+    s = { ...DEFAULT_SETTINGS, createdAt: nowISO(), updatedAt: nowISO() };
     await db.settings.put(s);
   }
   return s;
@@ -85,7 +112,7 @@ export async function getSettings() {
 
 export async function updateSettings(patch) {
   const s = await getSettings();
-  const next = { ...s, ...patch };
+  const next = { ...s, ...patch, updatedAt: nowISO() };
   await db.settings.put(next);
   return next;
 }

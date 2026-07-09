@@ -35,4 +35,8 @@ export {
   StickyNote,
   Info,
   History,
+  RefreshCw,
+  Cloud,
+  CloudOff,
+  Loader2,
 } from "lucide-react";

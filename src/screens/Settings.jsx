@@ -1,12 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
-import { useSettings, usePeople, useGroups } from "../db/hooks.js";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useSettings, usePeople, useGroups, useEntries, usePayments } from "../db/hooks.js";
 import { useApp } from "../app/AppContext.jsx";
 import { updateSettings } from "../db/db.js";
 import {
   createPerson,
   renamePerson,
   removePerson,
-  personHasHistory,
   restorePerson,
   restoreGroup,
   clearPerson,
@@ -36,7 +35,13 @@ import {
   Car,
   User,
   Trash2,
+  RefreshCw,
+  Cloud,
+  CloudOff,
+  Loader2,
 } from "../components/ui/Icons.jsx";
+import { syncNow, useSyncStatus } from "../lib/syncEngine.js";
+import { connect, disconnect, isConnected } from "../lib/drive.js";
 
 /* Settings: appearance, fuel/format prefs, default fuel price, the global people list, archived items with
    restore, JSON backup/restore, and the CyberCat easter egg. */
@@ -45,14 +50,33 @@ export function Settings() {
   const activePeople = usePeople() || [];
   const allPeople = usePeople({ includeArchived: true }) || [];
   const allGroups = useGroups({ includeArchived: true }) || [];
+  const allEntries = useEntries() || [];
+  const allPayments = usePayments() || [];
   const { toast, askConfirm } = useApp();
+
+  // Person IDs that appear anywhere in history (own a carpool, on an entry, or
+  // in a payment). Used to label their action button "Archive" (kept for
+  // history) vs "Remove" (deleted) - mirrors actions.personHasHistory but from
+  // the already-loaded reactive data, so no per-row async check is needed.
+  const peopleWithHistory = useMemo(() => {
+    const s = new Set();
+    for (const g of allGroups) if (g.ownerPersonId) s.add(g.ownerPersonId);
+    for (const e of allEntries)
+      for (const p of e.passengers || [])
+        if (p.who?.type === "person") s.add(p.who.personId);
+    for (const pm of allPayments)
+      if (pm.who?.type === "person") s.add(pm.who.personId);
+    return s;
+  }, [allGroups, allEntries, allPayments]);
 
   const [theme, setTheme] = useState(getTheme());
   const [price, setPrice] = useState(null);
   const [maint, setMaint] = useState(null);
   const [newPerson, setNewPerson] = useState("");
   const [showCat, setShowCat] = useState(false);
+  const [driveConnecting, setDriveConnecting] = useState(false);
   const fileRef = useRef(null);
+  const syncStatus = useSyncStatus();
 
   // Seed the editable fields once from settings. Using null (not "") as the
   // "not seeded yet" marker means clearing the field back to empty sticks -
@@ -126,13 +150,9 @@ export function Settings() {
     }
   }
 
-  async function archivePerson(p) {
-    let hasHistory = true;
-    try {
-      hasHistory = await personHasHistory(p.id);
-    } catch {
-      /* if the check fails, fall back to the safe "archive" wording */
-    }
+  async function archivePerson(p, hasHistory) {
+    // Match the dialog/toast to the real outcome: someone on any past entry or
+    // payment is archived (kept for history); one with no history is deleted.
     const ok = await askConfirm({
       title: hasHistory ? `Archive ${p.name}?` : `Remove ${p.name}?`,
       body: hasHistory
@@ -254,6 +274,43 @@ export function Settings() {
       toast("All data cleared. Starting fresh.");
     } catch (e) {
       toast(e.message, "error");
+    }
+  }
+
+  async function onConnectDrive() {
+    setDriveConnecting(true);
+    try {
+      await connect();
+      toast("Google Drive connected");
+      await syncNow({ allowInteractive: true });
+    } catch (e) {
+      toast(e.message || "Could not connect to Google Drive", "error");
+    } finally {
+      setDriveConnecting(false);
+    }
+  }
+
+  async function onDisconnectDrive() {
+    const ok = await askConfirm({
+      title: "Disconnect Google Drive?",
+      body: "Your data stays on this device. The shared snapshot remains in Drive and other connected devices can still sync to it.",
+      confirmLabel: "Disconnect",
+      danger: false,
+    });
+    if (!ok) return;
+    try {
+      await disconnect();
+      toast("Google Drive disconnected");
+    } catch (e) {
+      toast(e.message || "Could not disconnect", "error");
+    }
+  }
+
+  async function onSyncNow() {
+    try {
+      await syncNow({ allowInteractive: true });
+    } catch (e) {
+      toast(e.message || "Sync failed", "error");
     }
   }
 
@@ -447,14 +504,18 @@ export function Settings() {
             </p>
           ) : (
             <div className="people-list">
-              {activePeople.map((p) => (
-                <PersonRow
-                  key={p.id}
-                  person={p}
-                  onArchive={() => archivePerson(p)}
-                  onToast={toast}
-                />
-              ))}
+              {activePeople.map((p) => {
+                const hasHistory = peopleWithHistory.has(p.id);
+                return (
+                  <PersonRow
+                    key={p.id}
+                    person={p}
+                    hasHistory={hasHistory}
+                    onArchive={() => archivePerson(p, hasHistory)}
+                    onToast={toast}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
@@ -476,51 +537,59 @@ export function Settings() {
           <>
             <div className="detail-panel people-list">
               {archivedGroups.map((g) => (
-              <div className="people-row" key={g.id}>
-                <span className="people-row__name">
-                  <Car size={15} /> {g.name}
-                </span>
-                <div className="people-row__actions">
-                  <button
-                    className="mini-btn"
-                    type="button"
-                    onClick={() => onRestoreGroup(g)}
-                  >
-                    <ArchiveRestore size={13} /> Restore
-                  </button>
-                  <button
-                    className="mini-btn mini-btn--danger"
-                    type="button"
-                    onClick={() => onClearArchivedGroup(g)}
-                  >
-                    <Trash2 size={13} /> Clear
-                  </button>
+                <div className="people-row" key={g.id}>
+                  <span className="people-row__name">
+                    <Car size={15} /> {g.name}
+                  </span>
+                  <div className="people-row__actions">
+                    <button
+                      className="mini-btn"
+                      type="button"
+                      onClick={() => onRestoreGroup(g)}
+                      aria-label={`Restore ${g.name}`}
+                      title="Restore"
+                    >
+                      <ArchiveRestore size={13} /> <span className="mini-btn__label">Restore</span>
+                    </button>
+                    <button
+                      className="mini-btn mini-btn--danger"
+                      type="button"
+                      onClick={() => onClearArchivedGroup(g)}
+                      aria-label={`Clear ${g.name} from the list`}
+                      title="Clear from list"
+                    >
+                      <Trash2 size={13} /> <span className="mini-btn__label">Clear</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-            {archivedPeople.map((p) => (
-              <div className="people-row" key={p.id}>
-                <span className="people-row__name">
-                  <User size={15} /> {p.name}
-                </span>
-                <div className="people-row__actions">
-                  <button
-                    className="mini-btn"
-                    type="button"
-                    onClick={() => onRestorePerson(p)}
-                  >
-                    <ArchiveRestore size={13} /> Restore
-                  </button>
-                  <button
-                    className="mini-btn mini-btn--danger"
-                    type="button"
-                    onClick={() => onClearArchivedPerson(p)}
-                  >
-                    <Trash2 size={13} /> Clear
-                  </button>
+              ))}
+              {archivedPeople.map((p) => (
+                <div className="people-row" key={p.id}>
+                  <span className="people-row__name">
+                    <User size={15} /> {p.name}
+                  </span>
+                  <div className="people-row__actions">
+                    <button
+                      className="mini-btn"
+                      type="button"
+                      onClick={() => onRestorePerson(p)}
+                      aria-label={`Restore ${p.name}`}
+                      title="Restore"
+                    >
+                      <ArchiveRestore size={13} /> <span className="mini-btn__label">Restore</span>
+                    </button>
+                    <button
+                      className="mini-btn mini-btn--danger"
+                      type="button"
+                      onClick={() => onClearArchivedPerson(p)}
+                      aria-label={`Clear ${p.name} from the list`}
+                      title="Clear from list"
+                    >
+                      <Trash2 size={13} /> <span className="mini-btn__label">Clear</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
             </div>
             <p className="field-hint" style={{ textAlign: "center", marginTop: "0.4rem" }}>
               “Clear” removes an item from this list for good but keeps history intact.
@@ -529,21 +598,37 @@ export function Settings() {
         )}
       </section>
 
+      {/* Google Drive sync */}
+      <section className="section-block">
+        <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
+          Google Drive sync
+        </h2>
+        <div className="detail-panel field-grid">
+          <DriveStatus
+            syncStatus={syncStatus}
+            settings={settings}
+            connecting={driveConnecting}
+            onConnect={onConnectDrive}
+            onDisconnect={onDisconnectDrive}
+            onSyncNow={onSyncNow}
+          />
+        </div>
+      </section>
+
       {/* Backup & restore */}
       <section className="section-block">
         <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
-          Backup & restore
+          Backup &amp; restore
         </h2>
         <div className="detail-panel field-grid">
           <p className="field-hint" style={{ marginTop: "0" }}>
-              Everything lives on this device. Export a JSON backup regularly and
-              keep it somewhere safe.
-            </p>
+            Export a JSON backup regularly and keep it somewhere safe.
+          </p>
           <div className="btn-row btn-row--center" style={{ gap: "0.6rem", flexDirection: "column", alignItems: "center" }}>
             <button className="cta-primary" type="button" onClick={onExport}>
               <Download size={16} /> Export JSON
             </button>
-            
+
             <button
               className="cta-secondary"
               type="button"
@@ -561,7 +646,6 @@ export function Settings() {
           </div>
           <p className="field-hint" style={{ marginTop: "0.6rem" }}>
             Restoring a backup replaces everything currently on this device.
-            Google Drive backup is planned as a later add-on.
           </p>
         </div>
       </section>
@@ -588,8 +672,10 @@ export function Settings() {
                     className="mini-btn mini-btn--danger"
                     type="button"
                     onClick={() => onPermaDeleteGroup(g)}
+                    aria-label={`Delete ${g.name} forever`}
+                    title="Delete forever"
                   >
-                    <Trash2 size={13} /> Delete forever
+                    <Trash2 size={13} /> <span className="mini-btn__label">Delete forever</span>
                   </button>
                 </div>
               ))}
@@ -602,8 +688,10 @@ export function Settings() {
                     className="mini-btn mini-btn--danger"
                     type="button"
                     onClick={() => onPermaDeletePerson(p)}
+                    aria-label={`Delete ${p.name} forever`}
+                    title="Delete forever"
                   >
-                    <Trash2 size={13} /> Delete forever
+                    <Trash2 size={13} /> <span className="mini-btn__label">Delete forever</span>
                   </button>
                 </div>
               ))}
@@ -650,7 +738,7 @@ export function Settings() {
   );
 }
 
-function PersonRow({ person, onArchive, onToast }) {
+function PersonRow({ person, hasHistory, onArchive, onToast }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(person.name);
 
@@ -676,9 +764,9 @@ function PersonRow({ person, onArchive, onToast }) {
           autoFocus
           onKeyDown={(e) => e.key === "Enter" && save()}
         />
-        <div style={{ display: "flex", gap: "0.4rem" }}>
-          <button className="mini-btn" type="button" onClick={save}>
-            <Check size={13} /> Save
+        <div className="people-row__actions">
+          <button className="mini-btn" type="button" onClick={save} aria-label="Save name" title="Save">
+            <Check size={13} /> <span className="mini-btn__label">Save</span>
           </button>
           <button
             className="mini-btn"
@@ -687,6 +775,8 @@ function PersonRow({ person, onArchive, onToast }) {
               setName(person.name);
               setEditing(false);
             }}
+            aria-label="Cancel"
+            title="Cancel"
           >
             <X size={13} />
           </button>
@@ -700,20 +790,148 @@ function PersonRow({ person, onArchive, onToast }) {
       <span className="people-row__name">
         <User size={15} /> {person.name}
       </span>
-      <div style={{ display: "flex", gap: "0.4rem" }}>
-        <button className="mini-btn" type="button" onClick={() => setEditing(true)}>
-          <Pencil size={13} /> Rename
+      <div className="people-row__actions">
+        <button
+          className="mini-btn"
+          type="button"
+          onClick={() => setEditing(true)}
+          aria-label={`Rename ${person.name}`}
+          title="Rename"
+        >
+          <Pencil size={13} /> <span className="mini-btn__label">Rename</span>
         </button>
         <button
           className="mini-btn mini-btn--danger"
           type="button"
           onClick={onArchive}
-          aria-label={`Archive or remove ${person.name}`}
-          title="Archive (or remove if unused)"
+          aria-label={`${hasHistory ? "Archive" : "Remove"} ${person.name}`}
+          title={hasHistory ? "Archive" : "Remove"}
         >
-          <Archive size={13} /> Archive
+          {hasHistory ? <Archive size={13} /> : <Trash2 size={13} />}{" "}
+          <span className="mini-btn__label">{hasHistory ? "Archive" : "Remove"}</span>
         </button>
       </div>
     </div>
   );
 }
+
+/** Format a last-synced ISO timestamp as a human-readable relative string. */
+function relativeTime(isoStr) {
+  if (!isoStr) return null;
+  const diffMs = Date.now() - Date.parse(isoStr);
+  if (diffMs < 0) return "just now";
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 10) return "just now";
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}d ago`;
+}
+
+/**
+ * Google Drive sync status panel
+ * Shows: connection status, connect/disconnect/sync-now buttons, last-synced time, errors.
+ */
+function DriveStatus({ syncStatus, settings, connecting, onConnect, onDisconnect, onSyncNow }) {
+  const connected = Boolean(settings?.gdriveConnected);
+  const email = settings?.gdriveUserEmail || null;
+  const isSyncing = syncStatus?.state === "syncing" || connecting;
+  const lastSynced = relativeTime(syncStatus?.lastSyncedAt || settings?.lastSyncedAt);
+  const hasError = syncStatus?.state === "error" && syncStatus?.error;
+
+  // Determine status variant for the mini-btn color
+  const statusVariant = hasError
+    ? "mini-btn--error"
+    : isSyncing
+      ? "mini-btn--syncing"
+      : "mini-btn--connected";
+
+  if (!connected) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }} className="field-hint">
+          <CloudOff size={15} style={{ flexShrink: 0 }} />
+          <span>Not connected. Your data is only on this device.</span>
+        </div>
+        <p className="field-hint" style={{ marginTop: 0 }}>
+          Connect to keep your refuels and payments in sync across devices.
+          Uses your Google Drive's hidden AppData folder, never touches your regular Drive files.
+        </p>
+        <div className="btn-row btn-row--center" style={{ gap: "0.6rem", flexDirection: "column", alignItems: "center" }}>
+          <button
+            className="cta-primary"
+            type="button"
+            onClick={onConnect}
+            disabled={connecting}
+          >
+            {connecting ? (
+              <><Loader2 size={15} className="spin" /> Connecting...</>
+            ) : (
+              <><Cloud size={15} /> Connect Google Drive</>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+      {/* Status row */}
+      <div className="drive-status-row field-hint">
+        <Cloud size={15} style={{ flexShrink: 0, color: hasError ? "var(--color-error, #ff6b81)" : "var(--color-success, #4caf50)" }} />
+        <span>
+          Connected{email ? ` as ${email}` : ""}
+        </span>
+        <button
+          className={`mini-btn drive-mini-btn ${statusVariant}`}
+          type="button"
+          onClick={onDisconnect}
+          disabled={isSyncing}
+          title="Disconnect Drive"
+        >
+          {isSyncing ? (
+            <><Loader2 size={13} className="spin" /> <span className="mini-btn__label">Syncing..</span></>
+          ) : (
+            <><CloudOff size={13} /> <span className="mini-btn__label">Disconnect</span></>
+          )}
+        </button>
+      </div>
+
+      {/* Last synced */}
+      {lastSynced && !hasError && (
+        <p className="field-hint" style={{ marginTop: 0 }}>
+          Last synced: {lastSynced}
+        </p>
+      )}
+
+      {/* Error message */}
+      {hasError && (
+        <p className="field-hint" style={{ marginTop: 0, color: "var(--color-error, #ff6b81)" }}>
+          {syncStatus.error}
+        </p>
+      )}
+
+      {/* Action buttons */}
+      <div className="btn-row btn-row--center" style={{ gap: "0.6rem", flexDirection: "column", alignItems: "center" }}>
+        <button
+          className="cta-secondary"
+          type="button"
+          onClick={onSyncNow}
+          disabled={isSyncing}
+          title="Sync now"
+        >
+          {isSyncing ? (
+            <><Loader2 size={14} className="spin" /> Loading...</>
+          ) : (
+            <><RefreshCw size={14} /> Sync now</>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+

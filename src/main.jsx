@@ -21,6 +21,7 @@ import { installUiPop } from "./lib/uiPop.js";
 import { applyStoredTheme } from "./lib/theme.js";
 import { ensureSettings } from "./db/db.js";
 import { setFormatConfig } from "./lib/format.js";
+import { initAutoSync } from "./lib/syncEngine.js";
 
 applyStoredTheme();
 installUiPop();
@@ -42,7 +43,10 @@ if (navigator.storage?.persist) {
     .catch(() => {});
 }
 
-ensureSettings().then(setFormatConfig);
+ensureSettings().then((s) => {
+  setFormatConfig(s);
+  initAutoSync();
+});
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>

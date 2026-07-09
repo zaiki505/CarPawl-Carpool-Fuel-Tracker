@@ -18,6 +18,17 @@ import { whoEquals, whoKey } from "../lib/identity.js";
  *  write path clamps too so a negative value can never reach storage. */
 const nonNeg = (n) => Math.max(0, Number(n) || 0);
 
+/** Record a tombstone for a HARD delete so the removal propagates to other
+ *  synced devices (otherwise the record just reappears from the snapshot).
+ *  Archive/clear/restore paths keep the row and must NOT call this.
+ *  Must run inside a transaction whose scope includes `db.deletions`. */
+async function tombstone(table, ids) {
+  const list = (Array.isArray(ids) ? ids : [ids]).filter((id) => id != null);
+  if (!list.length) return;
+  const at = nowISO();
+  await db.deletions.bulkPut(list.map((id) => ({ table, id, deletedAt: at })));
+}
+
 /* ============================ People ============================ */
 
 export async function createPerson(name) {
@@ -26,6 +37,7 @@ export async function createPerson(name) {
     name: (name || "").trim(),
     isArchived: false,
     createdAt: nowISO(),
+    updatedAt: nowISO(),
   };
   if (!person.name) throw new Error("A name is required.");
   await db.people.add(person);
@@ -35,7 +47,7 @@ export async function createPerson(name) {
 export async function renamePerson(id, name) {
   const trimmed = (name || "").trim();
   if (!trimmed) throw new Error("A name is required.");
-  await db.people.update(id, { name: trimmed });
+  await db.people.update(id, { name: trimmed, updatedAt: nowISO() });
 }
 
 /** Does this person appear anywhere in history (group owner, entry passenger,
@@ -57,15 +69,18 @@ export async function personHasHistory(id) {
 /** Delete a person, or archive if they have any history. Returns what happened. */
 export async function removePerson(id) {
   if (await personHasHistory(id)) {
-    await db.people.update(id, { isArchived: true });
+    await db.people.update(id, { isArchived: true, updatedAt: nowISO() });
     return "archived";
   }
-  await db.people.delete(id);
+  await db.transaction("rw", db.people, db.deletions, async () => {
+    await db.people.delete(id);
+    await tombstone("people", id);
+  });
   return "deleted";
 }
 
 export async function restorePerson(id) {
-  await db.people.update(id, { isArchived: false, cleared: false });
+  await db.people.update(id, { isArchived: false, cleared: false, updatedAt: nowISO() });
 }
 
 /** "Clear" an archived person: collapse the row to a tiny name-only stub so it
@@ -83,6 +98,7 @@ export async function clearPerson(id) {
     isArchived: true,
     cleared: true,
     createdAt: p.createdAt || nowISO(),
+    updatedAt: nowISO(),
   });
 }
 
@@ -106,13 +122,14 @@ export async function createGroup({
     defaultKmPerLiter: Number(defaultKmPerLiter) || 0,
     isArchived: false,
     createdAt: nowISO(),
+    updatedAt: nowISO(),
   };
   await db.groups.add(group);
   return group;
 }
 
 export async function updateGroup(id, patch) {
-  const clean = { ...patch };
+  const clean = { ...patch, updatedAt: nowISO() };
   if (clean.defaultKmPerLiter != null) {
     clean.defaultKmPerLiter = Number(clean.defaultKmPerLiter) || 0;
   }
@@ -134,7 +151,7 @@ export async function setGroupOverrideDefault(groupId, who, amount) {
   const key = whoKey(who);
   if (amount == null) delete overrideDefaults[key];
   else overrideDefaults[key] = Number(amount) || 0;
-  await db.groups.update(groupId, { overrideDefaults });
+  await db.groups.update(groupId, { overrideDefaults, updatedAt: nowISO() });
 }
 
 export async function groupHasHistory(id) {
@@ -145,15 +162,18 @@ export async function groupHasHistory(id) {
 /** Delete a group, or archive if it has entries. */
 export async function removeGroup(id) {
   if (await groupHasHistory(id)) {
-    await db.groups.update(id, { isArchived: true });
+    await db.groups.update(id, { isArchived: true, updatedAt: nowISO() });
     return "archived";
   }
-  await db.groups.delete(id);
+  await db.transaction("rw", db.groups, db.deletions, async () => {
+    await db.groups.delete(id);
+    await tombstone("groups", id);
+  });
   return "deleted";
 }
 
 export async function restoreGroup(id) {
-  await db.groups.update(id, { isArchived: false, cleared: false });
+  await db.groups.update(id, { isArchived: false, cleared: false, updatedAt: nowISO() });
 }
 
 /** "Clear" an archived group: collapse to a minimal stub. Its fill-ups stay in
@@ -169,6 +189,7 @@ export async function clearGroup(id) {
     isArchived: true,
     cleared: true,
     createdAt: g.createdAt || nowISO(),
+    updatedAt: nowISO(),
   });
 }
 
@@ -269,9 +290,12 @@ export async function updateEntry(id, patch) {
 
 /** Delete an entry and cascade-delete its payments (they belong to it). */
 export async function removeEntry(id) {
-  await db.transaction("rw", db.entries, db.payments, async () => {
+  await db.transaction("rw", db.entries, db.payments, db.deletions, async () => {
+    const payIds = await db.payments.where("entryId").equals(id).primaryKeys();
     await db.payments.where("entryId").equals(id).delete();
     await db.entries.delete(id);
+    await tombstone("entries", id);
+    await tombstone("payments", payIds);
   });
 }
 
@@ -306,13 +330,19 @@ export async function updatePayment(id, patch) {
 }
 
 export async function removePayment(id) {
-  await db.payments.delete(id);
+  await db.transaction("rw", db.payments, db.deletions, async () => {
+    await db.payments.delete(id);
+    await tombstone("payments", id);
+  });
 }
 
 /** Wipe a set of payments in one go (swipe-to-clear on a passenger row). */
 export async function clearPayments(ids) {
   if (!ids?.length) return;
-  await db.payments.bulkDelete(ids);
+  await db.transaction("rw", db.payments, db.deletions, async () => {
+    await db.payments.bulkDelete(ids);
+    await tombstone("payments", ids);
+  });
 }
 
 /* ===================== Onboarding / bulk ===================== */
@@ -338,11 +368,18 @@ export async function createFirstCar({ name, defaultKmPerLiter, finishOnboarding
 /** Permanently delete a group AND all its fill-ups + their payments (cascade).
  *  Destructive - confirm first. */
 export async function permanentlyDeleteGroup(id) {
-  await db.transaction("rw", db.groups, db.entries, db.payments, async () => {
+  await db.transaction("rw", db.groups, db.entries, db.payments, db.deletions, async () => {
     const entryIds = await db.entries.where("groupId").equals(id).primaryKeys();
-    if (entryIds.length) await db.payments.where("entryId").anyOf(entryIds).delete();
+    let payIds = [];
+    if (entryIds.length) {
+      payIds = await db.payments.where("entryId").anyOf(entryIds).primaryKeys();
+      await db.payments.where("entryId").anyOf(entryIds).delete();
+    }
     await db.entries.where("groupId").equals(id).delete();
     await db.groups.delete(id);
+    await tombstone("groups", id);
+    await tombstone("entries", entryIds);
+    await tombstone("payments", payIds);
   });
 }
 
@@ -350,15 +387,22 @@ export async function permanentlyDeleteGroup(id) {
  *  carpools' fill-ups + payments), remove them from every remaining fill-up's
  *  passengers, delete their own payments, and remove the person record. */
 export async function permanentlyDeletePerson(id) {
-  await db.transaction("rw", db.people, db.groups, db.entries, db.payments, async () => {
+  await db.transaction("rw", db.people, db.groups, db.entries, db.payments, db.deletions, async () => {
     // 1. Carpools this person owns cascade away entirely (no dangling owner).
     const ownedGroupIds = await db.groups
       .where("ownerPersonId")
       .equals(id)
       .primaryKeys();
+    const cascadedEntryIds = [];
+    const cascadedPayIds = [];
     for (const gid of ownedGroupIds) {
       const eIds = await db.entries.where("groupId").equals(gid).primaryKeys();
-      if (eIds.length) await db.payments.where("entryId").anyOf(eIds).delete();
+      if (eIds.length) {
+        const pIds = await db.payments.where("entryId").anyOf(eIds).primaryKeys();
+        cascadedPayIds.push(...pIds);
+        await db.payments.where("entryId").anyOf(eIds).delete();
+      }
+      cascadedEntryIds.push(...eIds);
       await db.entries.where("groupId").equals(gid).delete();
     }
     if (ownedGroupIds.length) await db.groups.bulkDelete(ownedGroupIds);
@@ -370,7 +414,8 @@ export async function permanentlyDeletePerson(id) {
       .map((pm) => pm.id);
     if (theirPayIds.length) await db.payments.bulkDelete(theirPayIds);
 
-    // 3. Strip them from every remaining fill-up's passengers.
+    // 3. Strip them from every remaining fill-up's passengers (an edit, not a
+    //    delete - the entry survives, so it gets a fresh updatedAt, no tombstone).
     const entries = await db.entries.toArray();
     for (const e of entries) {
       const kept = (e.passengers || []).filter(
@@ -381,12 +426,37 @@ export async function permanentlyDeletePerson(id) {
       }
     }
     await db.people.delete(id);
+
+    // Tombstone everything actually removed so the deletes propagate on sync.
+    await tombstone("people", id);
+    await tombstone("groups", ownedGroupIds);
+    await tombstone("entries", cascadedEntryIds);
+    await tombstone("payments", [...cascadedPayIds, ...theirPayIds]);
   });
 }
 
 /** Wipe every table and reset to a fresh, un-onboarded state. Destructive -
- *  callers must double-confirm with the user first (8). */
+ *  callers must double-confirm with the user first.
+ *
+ *  Deliberately writes NO tombstones: "clear all data" is a local factory reset,
+ *  not "delete my data on every device". Emitting tombstones would let a reset on
+ *  one phone nuke every other device on the next sync. The tombstone log is also
+ *  cleared so the reset is genuinely empty locally.
+ *
+ *  Drive disconnect: if this device had Drive sync connected, disconnect it first.
+ *  Without this, the next auto-sync (focus/online) would immediately re-pull the
+ *  shared snapshot and undo the reset. The user would need to reconnect Drive
+ *  intentionally and sync again to re-populate from the cloud. */
 export async function clearAllData() {
+  // Disconnect Drive sync before wiping so the next auto-trigger doesn't
+  // immediately re-pull the shared snapshot from Drive.
+  try {
+    const { disconnect, isConnected } = await import("../lib/drive.js");
+    if (await isConnected()) await disconnect();
+  } catch {
+    // Drive module failed to load or wasn't connected - proceed with wipe anyway.
+  }
+
   await db.transaction(
     "rw",
     db.people,
@@ -394,6 +464,7 @@ export async function clearAllData() {
     db.entries,
     db.payments,
     db.settings,
+    db.deletions,
     async () => {
       await Promise.all([
         db.people.clear(),
@@ -401,6 +472,7 @@ export async function clearAllData() {
         db.entries.clear(),
         db.payments.clear(),
         db.settings.clear(),
+        db.deletions.clear(),
       ]);
     }
   );
