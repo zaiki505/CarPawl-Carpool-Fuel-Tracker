@@ -22,7 +22,7 @@ import { applyStoredTheme } from "./lib/theme.js";
 import { ensureSettings } from "./db/db.js";
 import { setFormatConfig } from "./lib/format.js";
 import { initAutoSync } from "./lib/syncEngine.js";
-import { syncRefuelReminder } from "./lib/notifications.js";
+import { syncRefuelReminder, syncPaymentReminders } from "./lib/notifications.js";
 import { generateDueRecurrences } from "./db/actions.js";
 
 applyStoredTheme();
@@ -48,8 +48,10 @@ if (navigator.storage?.persist) {
 ensureSettings().then((s) => {
   setFormatConfig(s);
   initAutoSync();
-  // Reschedule the smart refuel reminder on each launch (native no-op on web).
+  // Reschedule the smart refuel reminder + payment reminders on each launch
+  // (native no-op on web).
   syncRefuelReminder(Boolean(s.refuelReminder));
+  syncPaymentReminders(s);
   // Roll any recurring trips forward (schedule the next upcoming occurrence).
   generateDueRecurrences().catch(() => {});
 });

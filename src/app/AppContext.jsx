@@ -102,13 +102,29 @@ export function AppProvider({ children }) {
     if (r) r(value);
   }, []);
 
+  // ---- Generic overlay stack ----
+  // Sheets rendered from a screen's own state (breakdown, trip-picker) aren't
+  // the app-level `sheet`, so they register here to take part in hardware-back.
+  // Each entry's onClose is called (topmost first) when back is pressed.
+  const [overlays, setOverlays] = useState([]); // [{ id, onClose }]
+  const overlaySeq = useRef(0);
+  const openOverlay = useCallback((onClose) => {
+    const id = ++overlaySeq.current;
+    setOverlays((o) => [...o, { id, onClose }]);
+    return id;
+  }, []);
+  const closeOverlay = useCallback((id) => {
+    setOverlays((o) => o.filter((x) => x.id !== id));
+  }, []);
+
   // ---- Hardware/gesture back closes the topmost overlay ----
   // One history entry is pushed per open overlay layer, so each hardware-back
   // press closes exactly one layer and entries never leak: closing a layer via
   // the UI consumes its entry with history.back(). closing via the back button
   // lets the browser consume it. selfPopRef counts the synthetic back()
   // calls so the popstate handler skips them instead of double-closing.
-  const overlayDepth = (detail ? 1 : 0) + (sheet ? 1 : 0) + (confirm ? 1 : 0);
+  const overlayDepth =
+    (detail ? 1 : 0) + (sheet ? 1 : 0) + (confirm ? 1 : 0) + overlays.length;
   const historyDepthRef = useRef(0);
   const selfPopRef = useRef(0);
 
@@ -139,9 +155,11 @@ export function AppProvider({ children }) {
         return;
       }
       // A real hardware/gesture back consumed one entry - close the topmost
-      // overlay to match (priority order: confirm > sheet > detail).
+      // overlay to match (priority: registered overlays > confirm > sheet > detail).
       historyDepthRef.current = Math.max(0, historyDepthRef.current - 1);
-      if (confirm) {
+      if (overlays.length) {
+        overlays[overlays.length - 1].onClose();
+      } else if (confirm) {
         resolveConfirm(false);
       } else if (sheet) {
         setSheet(null);
@@ -151,15 +169,15 @@ export function AppProvider({ children }) {
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, [confirm, sheet, detail, resolveConfirm]);
+  }, [confirm, sheet, detail, overlays, resolveConfirm]);
 
   // Android hardware back / gesture. Without this, Capacitor's default is to
   // exit straight to the homescreen even with a sheet open. We route it through
   // the SAME history/popstate flow the web back gesture uses: if any overlay is
   // open, go back one entry (closes the topmost layer); only exit the app when
   // there's nothing left to close. Registered once; reads live state via a ref.
-  const navStateRef = useRef({ confirm, sheet, detail, selectionMode });
-  navStateRef.current = { confirm, sheet, detail, selectionMode };
+  const navStateRef = useRef({ confirm, sheet, detail, selectionMode, overlaysOpen: false });
+  navStateRef.current = { confirm, sheet, detail, selectionMode, overlaysOpen: overlays.length > 0 };
   // A screen can register a handler to intercept hardware-back when no overlay
   // is open (e.g. Settings uses it to step back from a category to the list
   // instead of exiting the app). It returns true if it handled the press.
@@ -171,10 +189,10 @@ export function AppProvider({ children }) {
     if (!Capacitor.isNativePlatform()) return;
     let handle;
     CapApp.addListener("backButton", () => {
-      const { confirm, sheet, detail, selectionMode } = navStateRef.current;
+      const { confirm, sheet, detail, selectionMode, overlaysOpen } = navStateRef.current;
       if (selectionMode) {
         clearSelection();
-      } else if (confirm || sheet || detail) {
+      } else if (overlaysOpen || confirm || sheet || detail) {
         window.history.back();
       } else if (backHandlerRef.current && backHandlerRef.current()) {
         // a screen consumed the back press
@@ -188,10 +206,11 @@ export function AppProvider({ children }) {
   }, []);
 
   const back = useCallback(() => {
-    if (confirm) resolveConfirm(false);
+    if (overlays.length) overlays[overlays.length - 1].onClose();
+    else if (confirm) resolveConfirm(false);
     else if (sheet) setSheet(null);
     else if (detail) setDetail(null);
-  }, [confirm, sheet, detail, resolveConfirm]);
+  }, [overlays, confirm, sheet, detail, resolveConfirm]);
 
   const value = useMemo(
     () => ({
@@ -215,6 +234,8 @@ export function AppProvider({ children }) {
       selectEntry,
       toggleSelectEntry,
       clearSelection,
+      openOverlay,
+      closeOverlay,
     }),
     [
       tab,
@@ -237,6 +258,8 @@ export function AppProvider({ children }) {
       selectEntry,
       toggleSelectEntry,
       clearSelection,
+      openOverlay,
+      closeOverlay,
     ]
   );
 

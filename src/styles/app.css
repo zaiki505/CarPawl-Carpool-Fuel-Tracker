@@ -1898,6 +1898,55 @@ button.chip-fact {
 }
 .breakdown-row--tappable:hover { background: var(--accent-wash-06); }
 .breakdown-row__chev { flex: 0 0 auto; opacity: 0.5; margin-left: 0.1rem; }
+
+/* Inline info tooltip (#4) + the "How it works" concepts page (#5). */
+.info-tip { display: inline-flex; vertical-align: middle; }
+.info-tip__btn {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-radius: 999px;
+  transition: color 0.2s ease;
+}
+.info-tip__btn:hover { color: var(--highlight); }
+.info-tip__pop {
+  position: fixed;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 12px;
+  background: var(--bg-menu);
+  border: 1px solid var(--border-hairline);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  animation: scaleInFade 0.18s var(--ease-out-expo) both;
+}
+.info-tip__title { font-size: 0.78rem; font-weight: 800; color: var(--highlight); }
+.info-tip__text { font-size: 0.74rem; color: var(--text-body); line-height: 1.5; }
+
+.concepts-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.concept-row {
+  padding: 0.7rem 0.8rem;
+  border-radius: 12px;
+  background: var(--surface-chip);
+  border: 1px solid var(--border-hairline);
+}
+.concept-row__term {
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: var(--highlight);
+  margin: 0 0 0.2rem;
+}
+.concept-row__desc { font-size: 0.76rem; color: var(--text-body); line-height: 1.55; margin: 0; }
 .credit-debt-row__amt { margin: 0.5rem 0.2rem 0.15rem; }
 .credit-debt-row__amt input {
   width: 100%;
@@ -2610,6 +2659,7 @@ body.light .people-row__edit {
 .settings-detail[data-active="people"] > [data-cat="people"],
 .settings-detail[data-active="sync"] > [data-cat="sync"],
 .settings-detail[data-active="backup"] > [data-cat="backup"],
+.settings-detail[data-active="concepts"] > [data-cat="concepts"],
 .settings-detail[data-active="danger"] > [data-cat="danger"] {
   display: block;
 }

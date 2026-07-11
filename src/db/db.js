@@ -79,6 +79,7 @@ export const DEVICE_LOCAL_SETTINGS = Object.freeze([
   "lastRemotePollAt",
   "lastLocalHash",
   "dismissedUpdateVersion",
+  "notifiedUpdateVersion",
 ]);
 
 export const DEFAULTS = Object.freeze({
@@ -112,6 +113,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
   defaultSplitMethod: DEFAULTS.defaultSplitMethod,
   defaultMaintenancePct: DEFAULTS.defaultMaintenancePct,
   upcomingWindow: "1mo", // how far ahead upcoming trips show inline (see lib/upcoming.js)
+  // Payment reminders (native). See lib/notifications.js syncPaymentReminders.
+  upcomingReminderLead: "off", // "off" | "1d" | "3d" | "7d" - notify N before a scheduled trip
+  upcomingArrivalReminder: false, // notify on the day a scheduled trip becomes due
+  debtNudgeInterval: "off", // "off" | "7d" | "14d" | "30d" - periodic unpaid-balance nudge
   onboardedAt: null,
 });
 

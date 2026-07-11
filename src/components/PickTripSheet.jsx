@@ -12,6 +12,7 @@ export function PickTripSheet({ title, subtitle, trips, groupName, onPick, onClo
     <Sheet
       title={title}
       onClose={onClose}
+      manageBack
       footer={
         <button className="cta-secondary btn-block" type="button" onClick={onClose}>
           Cancel

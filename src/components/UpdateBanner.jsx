@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { checkForUpdate } from "../lib/updateCheck.js";
+import { notifyUpdateAvailable } from "../lib/notifications.js";
 import { useSettings } from "../db/hooks.js";
 import { updateSettings } from "../db/db.js";
 import { Download, X } from "./ui/Icons.jsx";
@@ -19,6 +20,14 @@ export function UpdateBanner() {
       alive = false;
     };
   }, []);
+
+  // Fire a local notification once per new version (in addition to this banner).
+  useEffect(() => {
+    if (!update || !settings) return;
+    if (settings.notifiedUpdateVersion === update.latestVersion) return;
+    notifyUpdateAvailable(update.latestVersion);
+    updateSettings({ notifiedUpdateVersion: update.latestVersion });
+  }, [update, settings]);
 
   if (!update) return null;
   if (settings?.dismissedUpdateVersion === update.latestVersion) return null;

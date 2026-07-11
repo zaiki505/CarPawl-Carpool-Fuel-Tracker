@@ -17,6 +17,7 @@ import {
 import { exportToFile, readBackupFile, restoreFromBackup } from "../lib/backup.js";
 import { getTheme, toggleTheme } from "../lib/theme.js";
 import { Segment, Field } from "../components/ui/Primitives.jsx";
+import { InfoTip } from "../components/ui/InfoTip.jsx";
 import { ScreenLoading } from "../components/ui/ScreenLoading.jsx";
 import { Select } from "../components/ui/Select.jsx";
 import { SPLIT_METHOD_OPTIONS, SPLIT_METHOD_HINTS } from "../lib/splitMethods.js";
@@ -54,11 +55,17 @@ import {
   Moon,
   Sun,
   PawPrint,
+  Info,
 } from "../components/ui/Icons.jsx";
+import { GLOSSARY } from "../lib/glossary.js";
 import { syncNow, useSyncStatus, connectAndPrepare, resolveConflict } from "../lib/syncEngine.js";
 import { disconnect, deleteRemoteFile } from "../lib/drive.js";
 import { isNative, isAndroidWeb } from "../lib/platform.js";
-import { ensureNotificationPermission, syncRefuelReminder } from "../lib/notifications.js";
+import {
+  ensureNotificationPermission,
+  syncRefuelReminder,
+  syncPaymentReminders,
+} from "../lib/notifications.js";
 import { biometricAvailable, verifyBiometric } from "../lib/biometric.js";
 
 const ANDROID_APK_URL =
@@ -188,6 +195,21 @@ export function Settings() {
   async function saveUpcomingWindow(win) {
     await updateSettings({ upcomingWindow: win });
     toast("Upcoming trips view updated");
+  }
+
+  // Any payment-reminder toggle: enabling one asks for permission up front,
+  // then persist + reschedule from the fresh settings.
+  async function savePaymentReminder(patch, enabling) {
+    if (enabling) {
+      const granted = await ensureNotificationPermission();
+      if (!granted) {
+        toast("Allow notifications in system settings to get reminders.", "error");
+        return;
+      }
+    }
+    const next = await updateSettings(patch);
+    await syncPaymentReminders(next);
+    toast("Payment reminders updated");
   }
 
   async function toggleRefuelReminder(on) {
@@ -494,6 +516,7 @@ export function Settings() {
     { key: "people", label: "People", hint: "Passengers and archived items", icon: <Users size={20} /> },
     { key: "sync", label: "Google Drive sync", hint: "Sync across your devices", icon: <Cloud size={20} /> },
     { key: "backup", label: "Backup & restore", hint: "Export or restore a JSON file", icon: <Database size={20} /> },
+    { key: "concepts", label: "How it works", hint: "What the terms and concepts mean", icon: <Info size={20} /> },
     { key: "danger", label: "Danger zone", hint: "Permanent deletes and full reset", icon: <AlertTriangle size={20} />, danger: true },
   ];
   const activeCat = CATEGORIES.find((c) => c.key === category);
@@ -688,7 +711,20 @@ export function Settings() {
         </h2>
         <div className="detail-panel field-grid">
           <Field
-            label="Default split method"
+            label={
+              <span>
+                Default split method{" "}
+                <InfoTip
+                  term={
+                    settings.defaultSplitMethod === "equal"
+                      ? "equalSplit"
+                      : settings.defaultSplitMethod === "driver_comp"
+                      ? "customSplit"
+                      : "distanceSplit"
+                  }
+                />
+              </span>
+            }
             hint={SPLIT_METHOD_HINTS[settings.defaultSplitMethod || "distance"]}
           >
             <Segment
@@ -698,7 +734,11 @@ export function Settings() {
             />
           </Field>
           <Field
-            label="Maintenance markup (%)"
+            label={
+              <span>
+                Maintenance markup (%) <InfoTip term="maintenanceMarkup" />
+              </span>
+            }
             hint="Add a default maintenance markup on top of fuel + parking for Custom Split method. Each refuel can override it."
           >
             <div className="field-inline" style={{ gridTemplateColumns: "1fr auto" }}>
@@ -740,6 +780,54 @@ export function Settings() {
                 options={[
                   { value: "on", label: "On" },
                   { value: "off", label: "Off" },
+                ]}
+              />
+            </Field>
+          </div>
+
+          <div className="detail-panel field-grid" style={{ marginTop: "0.8rem" }}>
+            <Field
+              label="Before a scheduled trip"
+              hint="Get a heads-up this far ahead of an upcoming (future-dated) trip."
+            >
+              <Select
+                value={settings.upcomingReminderLead || "off"}
+                onChange={(v) => savePaymentReminder({ upcomingReminderLead: v }, v !== "off")}
+                options={[
+                  { value: "off", label: "Off" },
+                  { value: "1d", label: "1 day before" },
+                  { value: "3d", label: "3 days before" },
+                  { value: "7d", label: "1 week before" },
+                ]}
+              />
+            </Field>
+            <Field
+              label="On the trip's day"
+              hint="A reminder on the day a scheduled trip becomes due, to settle it."
+            >
+              <Segment
+                value={settings.upcomingArrivalReminder ? "on" : "off"}
+                onChange={(v) =>
+                  savePaymentReminder({ upcomingArrivalReminder: v === "on" }, v === "on")
+                }
+                options={[
+                  { value: "on", label: "On" },
+                  { value: "off", label: "Off" },
+                ]}
+              />
+            </Field>
+            <Field
+              label="Unpaid-balance nudge"
+              hint="While anyone still owes (or you owe), get a periodic reminder on this interval."
+            >
+              <Select
+                value={settings.debtNudgeInterval || "off"}
+                onChange={(v) => savePaymentReminder({ debtNudgeInterval: v }, v !== "off")}
+                options={[
+                  { value: "off", label: "Off" },
+                  { value: "7d", label: "Every 7 days" },
+                  { value: "14d", label: "Every 14 days" },
+                  { value: "30d", label: "Every 30 days" },
                 ]}
               />
             </Field>
@@ -957,6 +1045,24 @@ export function Settings() {
           <p className="field-hint" style={{ marginTop: "0.6rem" }}>
             Restoring a backup replaces everything currently on this device.
           </p>
+        </div>
+      </section>
+
+      {/* How it works: a revisitable glossary of the app's concepts */}
+      <section className="section-block" data-cat="concepts">
+        <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
+          How it works
+        </h2>
+        <p className="field-hint" style={{ marginTop: 0, marginBottom: "0.6rem" }}>
+          A quick guide to the terms CarPawl uses.
+        </p>
+        <div className="concepts-list">
+          {Object.entries(GLOSSARY).map(([key, c]) => (
+            <div className="concept-row" key={key}>
+              <p className="concept-row__term">{c.term}</p>
+              <p className="concept-row__desc">{c.long}</p>
+            </div>
+          ))}
         </div>
       </section>
 

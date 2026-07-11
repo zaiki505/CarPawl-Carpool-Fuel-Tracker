@@ -11,6 +11,7 @@ export function BreakdownSheet({ title, subtitle, rows = [], emptyText, onRowCli
     <Sheet
       title={title}
       onClose={onClose}
+      manageBack
       footer={
         <button className="cta-secondary btn-block" type="button" onClick={onClose}>
           Close

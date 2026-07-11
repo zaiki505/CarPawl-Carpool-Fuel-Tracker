@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "./Icons.jsx";
 import { haptic } from "../../lib/haptics.js";
+import { useAppOptional } from "../../app/AppContext.jsx";
 
 /* Bottom sheet - the slide-up panel. Glass panel treatment, enters with the
    sheetUp (blur-slide) keyframe. Tapping the scrim or the close button, or
@@ -12,12 +13,13 @@ import { haptic } from "../../lib/haptics.js";
 const DISMISS_THRESHOLD_PX = 110;
 const OUTRO_MS = 260;
 
-export function Sheet({ title, onClose, children, footer, banner }) {
+export function Sheet({ title, onClose, children, footer, banner, manageBack = false }) {
   const [dragY, setDragY] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [closing, setClosing] = useState(false);
   const startY = useRef(null);
   const closeTimer = useRef(null);
+  const app = useAppOptional();
 
   // Play the slide-down outro, then actually unmount (via the parent's onClose).
   function requestClose() {
@@ -25,6 +27,18 @@ export function Sheet({ title, onClose, children, footer, banner }) {
     setClosing(true);
     closeTimer.current = setTimeout(onClose, OUTRO_MS);
   }
+
+  // Opt-in: register with the app's back stack so hardware/gesture back closes
+  // this sheet. App-level sheets (payment/add-entry/etc.) are already tracked via
+  // the `sheet` state, so only screen-local sheets pass manageBack.
+  const requestCloseRef = useRef(requestClose);
+  requestCloseRef.current = requestClose;
+  useEffect(() => {
+    if (!manageBack || !app) return;
+    const id = app.openOverlay(() => requestCloseRef.current());
+    return () => app.closeOverlay(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const onKey = (e) => {
