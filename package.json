@@ -4,7 +4,7 @@
   "version": "0.2.5",
   "type": "module",
   "description": "CarPawl - a personal, offline-first carpool fuel tracker.",
-  "homepage": "https://github.io",
+  "homepage": "https://zaiki505.github.io/CarPawl-Carpool-Fuel-Tracker/",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
