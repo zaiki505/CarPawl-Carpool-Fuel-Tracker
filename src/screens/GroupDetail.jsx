@@ -17,7 +17,7 @@ import { whoEquals, whoKey, ME, person as mkPerson } from "../lib/identity.js";
 import { buildWhatsAppText, shareText } from "../lib/exportText.js";
 import { EntryCard } from "../components/EntryCard.jsx";
 import { UpcomingReveal } from "../components/UpcomingReveal.jsx";
-import { ActionMenu } from "../components/ui/ActionMenu.jsx";
+import { PickTripSheet } from "../components/PickTripSheet.jsx";
 import { EmptyState, Field, NumberInput } from "../components/ui/Primitives.jsx";
 import { ScreenLoading } from "../components/ui/ScreenLoading.jsx";
 import {
@@ -350,25 +350,20 @@ export function GroupDetail({ groupId }) {
 
       {/* Pay-picker: which fill-up to apply the payment to */}
       {payPickerWho && (
-        <ActionMenu
+        <PickTripSheet
           title={`Pay for ${whoName(payPickerWho, peopleMap)}`}
           subtitle={`Which ${isOwned ? "refuel" : "trip"} is this payment for?`}
+          groupName={group.name}
+          trips={payableEntriesFor(payPickerWho).map((e) => ({
+            entry: e,
+            amount: outstanding(e, payPickerWho, payments, applications),
+          }))}
+          onPick={(e) => {
+            const who = payPickerWho;
+            setPayPickerWho(null);
+            openSheet({ type: "payment", entry: e, who, ownedByMe: isOwned });
+          }}
           onClose={() => setPayPickerWho(null)}
-          items={payableEntriesFor(payPickerWho).map((e) => {
-            const out = outstanding(e, payPickerWho, payments);
-            return {
-              icon: <Fuel size={18} />,
-              label: e.title || group.name,
-              sublabel:
-                `${formatDate(e.date)} · ` +
-                (out > 0.005 ? `owes ${formatMoney(out)}` : "settled, add a credit"),
-              onClick: () => {
-                const who = payPickerWho;
-                setPayPickerWho(null);
-                openSheet({ type: "payment", entry: e, who, ownedByMe: isOwned });
-              },
-            };
-          })}
         />
       )}
     </div>

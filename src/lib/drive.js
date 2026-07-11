@@ -628,7 +628,7 @@ async function _patch(fileId, body, etag, retryOnConflict, { allowInteractive = 
     const finalSnap = mergeSnapshots(freshLocal, remerged, { now: Date.now() });
 
     const newBody = JSON.stringify(finalSnap);
-    return _patch(accessToken, fileId, newBody, newEtag, false /* no second retry */);
+    return _patch(fileId, newBody, newEtag, false /* no second retry */, { allowInteractive });
   }
 
   if (res.status === 404) {

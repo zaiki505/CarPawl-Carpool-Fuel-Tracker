@@ -4,14 +4,28 @@ import { haptic } from "../../lib/haptics.js";
 /* Small building blocks composed from the token classes in app.css. Kept
    presentational - no data logic. */
 
-export function StatCard({ label, icon, value, valueClass = "", hint, wide, accent, tone }) {
+export function StatCard({ label, icon, value, valueClass = "", hint, wide, accent, tone, onClick }) {
   return (
     <div
       className={
         "stat-card" +
         (wide ? " stat-card--wide" : "") +
         (accent ? " stat-card--accent" : "") +
-        (tone ? " stat-card--" + tone : "")
+        (tone ? " stat-card--" + tone : "") +
+        (onClick ? " stat-card--clickable" : "")
+      }
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
       }
     >
       <span className="stat-card__label">
@@ -20,6 +34,7 @@ export function StatCard({ label, icon, value, valueClass = "", hint, wide, acce
       </span>
       <span className={"stat-card__value " + valueClass}>{value}</span>
       {hint != null && <span className="stat-card__hint">{hint}</span>}
+      {onClick && <span className="stat-card__more" aria-hidden="true">›</span>}
     </div>
   );
 }

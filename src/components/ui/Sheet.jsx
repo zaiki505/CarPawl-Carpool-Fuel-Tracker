@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "./Icons.jsx";
 import { haptic } from "../../lib/haptics.js";
 
@@ -76,7 +77,11 @@ export function Sheet({ title, onClose, children, footer, banner }) {
     }
   }
 
-  return (
+  // Portalled to <body> so the sheet always sits in the ROOT stacking context -
+  // above the FAB (z-index 41) and free of any screen-level transform/animation
+  // stacking context (a sheet rendered inline inside a `.stagger` screen would
+  // otherwise be trapped under the FAB and inherit the wrong entrance animation).
+  return createPortal(
     <div
       className={"sheet-scrim" + (closing ? " sheet-scrim--closing" : "")}
       onMouseDown={(e) => {
@@ -112,6 +117,7 @@ export function Sheet({ title, onClose, children, footer, banner }) {
         <div className="sheet__body">{children}</div>
         {footer && <div className="sheet__foot">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

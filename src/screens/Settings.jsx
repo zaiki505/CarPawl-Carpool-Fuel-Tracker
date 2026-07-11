@@ -62,7 +62,7 @@ import { ensureNotificationPermission, syncRefuelReminder } from "../lib/notific
 import { biometricAvailable, verifyBiometric } from "../lib/biometric.js";
 
 const ANDROID_APK_URL =
-  "https://github.com/zaiki505/CarPawl-Carpool-Fuel-Tracker/releases/download/v0.2.5/CarPawl.v0.2.5.apk";
+  "https://github.com/zaiki505/CarPawl-Carpool-Fuel-Tracker/releases/download/v0.2.6/CarPawl.v0.2.6.apk";
 
 /* Settings: appearance, fuel/format prefs, default fuel price, the global people list, archived items with
    restore, JSON backup/restore, and the CyberCat easter egg. */
@@ -1044,7 +1044,7 @@ export function Settings() {
             </div>
           )}
           <p className="faint" style={{ fontSize: "0.68rem" }}>
-            v0.2.5 · Made by Zaiki
+            v0.2.6 · Made by Zaiki
           </p>
         </div>
       )}

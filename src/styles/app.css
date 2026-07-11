@@ -263,8 +263,8 @@ body.light .cta-contrast:hover { background: #333; }
   gap: 0.4rem;
 }
 .stat-card__value {
-  font-size: clamp(1.5rem, 6vw, 1.95rem);
-  font-weight: 800;
+  font-size: clamp(1.5rem, 6vw, 1.95rem) !important;
+  font-weight: 800 !important;
   line-height: 1.1;
   letter-spacing: -0.01em;
 }
@@ -1280,6 +1280,61 @@ body.light .toast[data-state="info"] { background: rgba(243, 232, 255, 0.9); }
   color: var(--text-primary);
 }
 
+/* Android "update available" banner (dismissable) - same shape as the reauth
+   banner, accented with the brand highlight. */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 14px;
+  background: var(--accent-wash-12, rgba(167, 84, 255, 0.12));
+  border: 1px solid var(--border-accent);
+  color: var(--text-primary);
+  margin-bottom: 0.4rem;
+  animation: stackSlideIn var(--dur-entrance) var(--ease-out-expo) backwards;
+}
+.update-banner__icon { flex: 0 0 auto; color: var(--highlight); }
+.update-banner__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.update-banner__text strong { font-size: 0.82rem; }
+.update-banner__text span { font-size: 0.72rem; color: var(--text-muted, #9aa); }
+.update-banner__action {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--highlight);
+  background: var(--highlight);
+  color: var(--lightFont, #fff);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.74rem;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.update-banner__close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  color: var(--text-muted, #9aa);
+  cursor: pointer;
+}
+.update-banner__close:hover { color: var(--text-primary); }
+
 .entry-card--upcoming {
   border: 2px dashed var(--border-accent);
   opacity: 0.58;
@@ -1749,9 +1804,100 @@ button.chip-fact {
   background: var(--highlight);
   border-color: var(--highlight);
 }
-.credit-debt-row__info { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.credit-debt-row__info { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; flex: 1 1 auto; }
 .credit-debt-row__name { font-weight: 700; font-size: 0.85rem; }
 .credit-debt-row__sub { font-size: 0.72rem; color: var(--text-muted, #9aa); }
+
+/* Tap-through variant used by the "which trip is this payment for?" picker, so
+   it matches the apply-credit debt rows. */
+.credit-debt-row--pick {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.15s var(--ease-bounce);
+}
+.credit-debt-row--pick:hover {
+  border-color: var(--highlight);
+  background: var(--accent-wash-12, rgba(167, 84, 255, 0.12));
+}
+.credit-debt-row--pick:active { transform: scale(0.99); }
+.credit-debt-row__lead {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--accent-wash-12, rgba(167, 84, 255, 0.12));
+  color: var(--highlight);
+}
+.credit-debt-row__chev { flex: 0 0 auto; opacity: 0.5; }
+
+/* Clickable dashboard summary cards + their breakdown sheet (#2). */
+.stat-card--clickable { cursor: pointer; }
+.stat-card--clickable:hover { border-color: var(--border-accent); }
+.stat-card__more {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.8rem;
+  color: var(--text-faint);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.stat-card { position: relative; }
+.fuel-spend-card__value-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.fuel-spend-card__value-btn .stat-card__more { position: static; font-size: 1rem; }
+
+.breakdown-list { display: flex; flex-direction: column; }
+.breakdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.2rem;
+}
+.breakdown-row + .breakdown-row { border-top: 1px solid var(--border-hairline); }
+.breakdown-row__info { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.breakdown-row__label { font-weight: 700; font-size: 0.85rem; }
+.breakdown-row__sub {
+  font-size: 0.72rem;
+  color: var(--text-muted, #9aa);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.breakdown-row__amt { font-weight: 800; font-size: 0.95rem; flex: 0 0 auto; }
+.breakdown-row__amt.pos { color: #34d399; }
+.breakdown-row__amt.neg { color: #ff6b81; }
+.breakdown-row--tappable {
+  width: 100%;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 8px;
+  transition: background 0.18s ease;
+}
+.breakdown-row--tappable:hover { background: var(--accent-wash-06); }
+.breakdown-row__chev { flex: 0 0 auto; opacity: 0.5; margin-left: 0.1rem; }
 .credit-debt-row__amt { margin: 0.5rem 0.2rem 0.15rem; }
 .credit-debt-row__amt input {
   width: 100%;

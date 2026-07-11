@@ -78,6 +78,7 @@ export const DEVICE_LOCAL_SETTINGS = Object.freeze([
   "lastSyncedAt",
   "lastRemotePollAt",
   "lastLocalHash",
+  "dismissedUpdateVersion",
 ]);
 
 export const DEFAULTS = Object.freeze({

@@ -9,7 +9,7 @@ import { TrendingUp, TrendingDown, Fuel } from "./ui/Icons.jsx";
 /* Dashboard fuel-spend card. Period toggle (week / month / all), user gross spend split into
    driver vs rider, the group (owned) total, and a trend vs the previous period
    with a message when there's no baseline. */
-export function FuelSpendCard({ entries, groupOwnedMap }) {
+export function FuelSpendCard({ entries, groupOwnedMap, onOpenBreakdown }) {
   const [period, setPeriod] = useState("month");
   // Fresh no-baseline message each page load, stable across re-renders (#12).
   const [funMsg] = useState(
@@ -56,7 +56,19 @@ export function FuelSpendCard({ entries, groupOwnedMap }) {
         </button>
       </div>
 
-      <span className="stat-card__value">{formatMoney(yourSpend)}</span>
+      {onOpenBreakdown ? (
+        <button
+          type="button"
+          className="stat-card__value fuel-spend-card__value-btn"
+          onClick={() => onOpenBreakdown(period)}
+          title="See spend by vehicle"
+        >
+          {formatMoney(yourSpend)}
+          <span className="stat-card__more" aria-hidden="true">›</span>
+        </button>
+      ) : (
+        <span className="stat-card__value">{formatMoney(yourSpend)}</span>
+      )}
 
       <div className="fuel-spend-card__break">
         <span>
