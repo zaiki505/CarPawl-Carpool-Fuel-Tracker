@@ -8,6 +8,9 @@ dist-ssr
 .DS_Store
 .vite
 .claude/
+android
+ANDROID.md
+HANDOFF.md
 
 # Local scratch / extraction artifacts
 _extracted

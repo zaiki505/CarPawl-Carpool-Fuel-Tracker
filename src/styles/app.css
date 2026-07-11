@@ -474,6 +474,16 @@ body.light .owner-chip--other {
   grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
 }
+/* A paired dropdown row (e.g. Currency + Date format) that stacks on small
+   screens and only sits side-by-side once there's room. */
+.field-pair-responsive {
+  grid-template-columns: 1fr;
+}
+@media (min-width: 520px) {
+  .field-pair-responsive {
+    grid-template-columns: 1fr 1fr;
+  }
+}
 .field-prefix {
   position: relative;
 }
@@ -644,6 +654,9 @@ body.light .bottom-nav__pill {
   box-shadow: 0 -14px 40px rgba(0, 0, 0, 0.45);
   animation: sheetUp 0.5s var(--ease-out-expo) both;
   padding-bottom: env(safe-area-inset-bottom);
+  /* smooth spring-back when a drag-to-dismiss doesn't cross the threshold
+     (suppressed mid-drag via inline transition:none) */
+  transition: transform 0.25s var(--ease-out-expo);
 }
 @keyframes sheetUp {
   from {
@@ -657,9 +670,40 @@ body.light .bottom-nav__pill {
     transform: translateY(0);
   }
 }
+/* Dismiss outro: the sheet slides down off-screen and the scrim fades. Placed
+   after the .sheet animation so it overrides the sheetUp entrance. The transform
+   animates from wherever the drag left it (inline translateY) down to off-screen,
+   so a flick-to-dismiss continues smoothly instead of snapping. */
+.sheet--closing {
+  animation: sheetDown 0.26s var(--ease-out-expo) forwards;
+}
+@keyframes sheetDown {
+  to {
+    transform: translateY(110%);
+    opacity: 0.5;
+  }
+}
+.sheet-scrim--closing {
+  animation: fadeOut 0.26s ease forwards;
+}
+@keyframes fadeOut {
+  to { opacity: 0; }
+}
 @media (prefers-reduced-motion: reduce) {
   .sheet { animation: none; }
   .sheet-scrim { animation: none; }
+  .sheet--closing { animation: none; }
+  .sheet-scrim--closing { animation: none; }
+}
+/* Grip + header form the drag-to-dismiss handle. touch-action:none stops the
+   browser from turning the vertical drag into a scroll gesture. */
+.sheet__drag-handle {
+  flex: 0 0 auto;
+  touch-action: none;
+  cursor: grab;
+}
+.sheet__drag-handle:active {
+  cursor: grabbing;
 }
 .sheet__grip {
   width: 40px;
@@ -813,7 +857,21 @@ body.light .toast[data-state="info"] { background: rgba(243, 232, 255, 0.9); }
 }
 .modal__title { margin: 0 0 0.5rem; font-size: 1.1rem; font-weight: 800; }
 .modal__body { color: var(--text-body); font-size: var(--text-small); margin: 0 0 1.2rem; line-height: 1.6; }
-.modal__actions { display: flex; gap: 0.6rem; justify-content: flex-end; }
+/* Stack dialog buttons full-width vertically (primary on top, cancel below).
+   DOM order is [cancel, confirm]; column-reverse puts confirm on top. This keeps
+   long labels (e.g. "Replace with Drive's copy" / "Keep both instead") from
+   cramming side-by-side and overflowing on a phone. */
+.modal__actions {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 0.5rem;
+}
+.modal__actions > button {
+  width: 100%;
+  /* cta-primary/secondary are inline-flex with no justify-content, so at full
+     width their icon+label sit left - center them like .btn-block does. */
+  justify-content: center;
+}
 
 /* Segmented control (e.g. ownership choice, filters) */
 .segment {
@@ -938,8 +996,11 @@ body.light .toast[data-state="info"] { background: rgba(243, 232, 255, 0.9); }
 }
 .chart-carousel__track::-webkit-scrollbar { display: none; }
 .chart-carousel__card {
-  flex: 0 0 min(320px, 82vw);
-  scroll-snap-align: start;
+  /* One full-width chart per view (no corner peeking), and snap-stop:always so a
+     single swipe advances exactly one chart instead of flinging past several. */
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
   background: var(--surface-glass-panel);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
@@ -1058,6 +1119,167 @@ body.light .toast[data-state="info"] { background: rgba(243, 232, 255, 0.9); }
 .entry-card + .entry-card { margin-top: 0.6rem; }
 .entry-card:hover { border-color: var(--border-accent); }
 
+/* Multi-select (#5): selectable cards get a grab cursor; selected ones a purple
+   ring + wash so a selection reads at a glance. */
+.entry-card--selectable {
+  cursor: pointer;
+  transition: border-color 0.28s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.entry-card--selected {
+  border-color: var(--highlight);
+  background: var(--accent-wash-16, rgba(167, 84, 255, 0.16));
+  box-shadow: inset 0 0 0 2px var(--highlight), 0 6px 20px rgba(167, 84, 255, 0.25);
+  opacity: 1;
+}
+
+/* Floating multi-select action bar (#5), pinned to the top of the screen. */
+.selection-bar {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 0.6rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 58;
+  width: min(680px, calc(100% - 1.2rem));
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 16px;
+  background: var(--bg-menu);
+  border: 1px solid var(--border-hairline);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  animation: selBarIn 0.35s var(--ease-out-expo) both;
+}
+@keyframes selBarIn {
+  from { opacity: 0; transform: translate(-50%, -12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .selection-bar { animation: none; }
+}
+.selection-bar__close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: none;
+  background: var(--surface-chip);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.selection-bar__count {
+  flex: 1 1 auto;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.82rem;
+  min-width: 0;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.selection-bar__actions {
+  display: flex;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+.selection-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-chip);
+  background: var(--surface-chip);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s var(--ease-bounce), color 0.2s ease, border-color 0.2s ease;
+}
+.selection-pill:hover {
+  color: var(--highlight);
+  border-color: var(--highlight);
+  transform: translateY(-1px);
+}
+.selection-pill:active { transform: scale(0.96); }
+.selection-pill--danger:hover { color: #ff6b81; border-color: #ff6b81; }
+@media (max-width: 430px) {
+  .selection-pill { padding: 0.45rem; }
+  .selection-pill__label { display: none; }
+}
+
+/* Homepage "sync paused" warning (dismissable) when Drive sign-in lapsed. */
+.reauth-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 14px;
+  background: rgba(255, 180, 60, 0.12);
+  border: 1px solid rgba(255, 180, 60, 0.4);
+  color: var(--text-primary);
+  margin-bottom: 0.4rem;
+  animation: stackSlideIn var(--dur-entrance) var(--ease-out-expo) backwards;
+}
+.reauth-banner__icon {
+  flex: 0 0 auto;
+  color: #ffb43c;
+}
+.reauth-banner__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.reauth-banner__text strong {
+  font-size: 0.82rem;
+}
+.reauth-banner__text span {
+  font-size: 0.72rem;
+  color: var(--text-muted, #9aa);
+}
+.reauth-banner__action {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 180, 60, 0.5);
+  background: rgba(255, 180, 60, 0.16);
+  color: #ffb43c;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.74rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.reauth-banner__action:disabled {
+  opacity: 0.6;
+}
+.reauth-banner__close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: none;
+  color: var(--text-muted, #9aa);
+  cursor: pointer;
+}
+.reauth-banner__close:hover {
+  color: var(--text-primary);
+}
+
 .entry-card--upcoming {
   border: 2px dashed var(--border-accent);
   opacity: 0.58;
@@ -1077,6 +1299,54 @@ body.light .toast[data-state="info"] { background: rgba(243, 232, 255, 0.9); }
   color: var(--tag-web);
   background: var(--tag-web-bg);
   border: 1px solid var(--tag-web-border);
+}
+.recur-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.58rem;
+  font-weight: bold;
+  letter-spacing: 0.03em;
+  color: var(--text-muted, #9aa);
+  background: var(--surface-chip);
+  border: 1px solid var(--border-chip);
+}
+/* Staged "show more" for far-future upcoming trips (see UpcomingReveal). */
+.upcoming-more {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  margin-bottom: 0.6rem;
+  border-radius: 14px;
+  border: 1px dashed var(--border-chip);
+  background: var(--surface-chip);
+  color: var(--text-muted, #9aa);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, transform 0.2s var(--ease-bounce);
+}
+.upcoming-more:hover {
+  color: var(--highlight);
+  border-color: var(--highlight);
+  transform: translateY(-1px);
+}
+.upcoming-more:active { transform: scale(0.98); }
+.upcoming-more__count {
+  min-width: 1.3rem;
+  padding: 0 0.4rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent-wash-16, rgba(167, 84, 255, 0.16));
+  color: var(--highlight);
+  font-size: 0.7rem;
+  text-align: center;
 }
 .entry-card__head {
   width: 100%;
@@ -1124,6 +1394,34 @@ body.light .toast[data-state="info"] { background: rgba(243, 232, 255, 0.9); }
 }
 .fact__value { font-size: 0.82rem; font-weight: bold; }
 .fact__hint { font-size: 0.6rem; color: var(--text-faint); }
+
+/* Tap-to-edit affordances (#6): each fact opens the editor focused on its
+   field; the facts panel's empty space defaults to the cost field. */
+.entry-facts--tappable { cursor: pointer; }
+.fact--tappable {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  align-items: flex-start;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.2rem;
+  margin: -0.2rem;
+  border-radius: 8px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.18s var(--ease-bounce);
+}
+.fact--tappable:hover { background: var(--accent-wash-16, rgba(167, 84, 255, 0.16)); }
+.fact--tappable:active { transform: scale(0.96); }
+.owner-chip.is-tappable,
+.upcoming-pill.is-tappable,
+.recur-pill.is-tappable {
+  cursor: pointer;
+}
 
 .pax-list { display: flex; flex-direction: column; gap: 0.5rem; }
 .pax-row {
@@ -1234,12 +1532,32 @@ body.light .toast[data-state="info"] { background: rgba(243, 232, 255, 0.9); }
   }
 }
 
-/* Drive status row layout */
+/* Drive status row layout: icon + email on one line (email truncates), with the
+   Disconnect button pinned to the right instead of wrapping onto its own line. */
+/* min-width:0 lets this collapse inside the .detail-panel grid track (whose
+   default min-width:auto would otherwise size to content and overflow). */
+.drive-panel {
+  min-width: 0;
+}
 .drive-status-row {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+.drive-status-row__info {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0; /* lets the email shrink and ellipsis instead of forcing a wrap */
+  flex: 1 1 auto;
+}
+.drive-status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Disabled state for secondary CTA (Sync now while syncing) */
@@ -1247,6 +1565,51 @@ body.light .toast[data-state="info"] { background: rgba(243, 232, 255, 0.9); }
   opacity: 0.5;
   cursor: not-allowed;
   transform: none !important;
+}
+
+/* Biometric lock screen (native app lock) */
+.lock-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background: var(--z-bg, #141418);
+}
+.lock-screen__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: center;
+  max-width: 320px;
+}
+.lock-screen__title {
+  margin: 0.4rem 0 0;
+  font-weight: 800;
+  font-size: 1.1rem;
+}
+.lock-screen__hint {
+  margin: 0 0 0.6rem;
+  opacity: 0.7;
+  font-size: 0.85rem;
+}
+
+/* "Get the Android app" banner (Android web only) */
+.get-app-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+.get-app-row__title {
+  margin: 0 0 0.15rem;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+a.cta-primary,
+a.cta-secondary {
+  text-decoration: none;
 }
 
 /* ------------------- Group Detail bits ------------------- */
@@ -1269,6 +1632,23 @@ body.light .toast[data-state="info"] { background: rgba(243, 232, 255, 0.9); }
   padding: 0.3rem 0.7rem;
 }
 .chip-fact svg { color: var(--highlight); }
+/* The chip can be a button (tap-to-edit tolls/parking/maintenance) - keep it
+   looking like the chip, add a tappable affordance. */
+button.chip-fact {
+  font-family: var(--font-mono);
+  cursor: default;
+}
+.chip-fact--tappable {
+  cursor: pointer;
+  transition: border-color 0.18s ease, color 0.18s ease, transform 0.18s var(--ease-bounce);
+}
+.chip-fact--tappable:hover {
+  border-color: var(--highlight);
+  color: var(--text-primary);
+}
+.chip-fact--tappable:active {
+  transform: scale(0.97);
+}
 
 .balance-row {
   display: flex;
@@ -1306,6 +1686,115 @@ body.light .toast[data-state="info"] { background: rgba(243, 232, 255, 0.9); }
 }
 .balance-row--tappable:hover { background: var(--accent-wash-06); }
 .balance-row--tappable + .balance-row--tappable { border-top: 1px solid var(--border-hairline); }
+
+/* Credit offset (#credit): "apply credit" affordance under a balance row, and
+   the debt-picker rows inside the apply-credit sheet. */
+.balance-row-wrap { display: flex; flex-direction: column; }
+.apply-credit-btn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.1rem 0 0.45rem 0.4rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-chip);
+  background: var(--accent-wash-12, rgba(167, 84, 255, 0.12));
+  color: var(--highlight);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.2s var(--ease-bounce), border-color 0.2s ease;
+}
+.apply-credit-btn:hover { border-color: var(--highlight); transform: translateY(-1px); }
+.apply-credit-btn:active { transform: scale(0.97); }
+
+.credit-debt-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.credit-debt-row {
+  border: 1px solid var(--border-hairline);
+  border-radius: 12px;
+  padding: 0.4rem;
+  background: var(--surface-chip);
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.credit-debt-row.is-on {
+  border-color: var(--highlight);
+  background: var(--accent-wash-12, rgba(167, 84, 255, 0.12));
+}
+.credit-debt-row__pick {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  padding: 0.2rem;
+}
+.credit-debt-row__check {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border-chip);
+  display: inline-grid;
+  place-items: center;
+  color: var(--lightFont);
+}
+.credit-debt-row.is-on .credit-debt-row__check {
+  background: var(--highlight);
+  border-color: var(--highlight);
+}
+.credit-debt-row__info { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
+.credit-debt-row__name { font-weight: 700; font-size: 0.85rem; }
+.credit-debt-row__sub { font-size: 0.72rem; color: var(--text-muted, #9aa); }
+.credit-debt-row__amt { margin: 0.5rem 0.2rem 0.15rem; }
+.credit-debt-row__amt input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-chip);
+  border-radius: 10px;
+  padding: 0.6rem 0.7rem 0.6rem 2.4rem;
+  outline: none;
+  transition: border-color 0.25s ease, background 0.25s ease;
+}
+.credit-debt-row__amt input:focus {
+  border-color: var(--highlight);
+  background: rgba(255, 255, 255, 0.09);
+}
+body.light .credit-debt-row__amt input {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
+  color: var(--darkFont);
+}
+
+/* Credit-offset rows shown INSIDE the target trip card (part of that trip). */
+.entry-credit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+.entry-credit-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 10px;
+  border: 1px dashed var(--border-accent);
+  background: var(--accent-wash-06);
+  font-size: 0.75rem;
+}
+.entry-credit-row__icon { flex: 0 0 auto; color: var(--highlight); }
+.entry-credit-row__text { flex: 1 1 auto; min-width: 0; font-weight: 700; }
 
 .payment-context {
   display: flex;
@@ -1828,6 +2317,156 @@ body.light .people-row__edit {
   gap: 0.7rem;
   padding: 1.5rem 0 0.5rem;
 }
+
+/* Mascot filling the Appearance detail page below the theme toggle. */
+.appearance-cat {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 2.5rem;
+  padding: 1rem 0 2rem;
+}
+
+/* ---- Android-style settings: category list + per-category detail ---- */
+.settings-cats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+.settings-cat-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-panel);
+  background: var(--surface-glass-panel);
+  border: 1px solid var(--border-hairline);
+  box-shadow: var(--shadow-panel);
+  color: var(--text-primary);
+  /* buttons don't inherit the page font - opt back into the app's mono. */
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.2s ease, background 0.2s ease;
+}
+.settings-cat-row:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-chip);
+}
+.settings-cat-row:active {
+  transform: translateY(0);
+}
+.settings-cat-row__icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--highlight);
+}
+.settings-cat-row__icon.is-danger {
+  color: #ff6b81;
+}
+.settings-cat-row__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+.settings-cat-row__label {
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+.settings-cat-row__hint {
+  font-size: 0.72rem;
+  color: var(--text-muted, #9aa);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-cat-row__chev {
+  flex: 0 0 auto;
+  opacity: 0.45;
+}
+
+/* Detail page header with a back button. */
+.settings-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.settings-back {
+  flex: 0 0 auto;
+}
+/* Let the title block fill the row so the "SETTINGS" kicker and the category
+   title below it both sit against the right edge of the header. */
+.settings-detail-head > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.settings-detail-head .screen-head__kicker,
+.settings-detail-head .screen-head__title {
+  text-align: right;
+}
+
+/* "Needs attention" badge on a category row (e.g. Drive sync when it's
+   disconnected or errored). Sits just before the chevron. */
+.settings-cat-status {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted, #9aa);
+  opacity: 0.85;
+}
+.settings-cat-status.is-error {
+  color: #ff6b81;
+  opacity: 1;
+}
+
+/* Icon + label inside a segmented-control option (e.g. the theme toggle). */
+.seg-ico {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* Header text glides in and un-blurs when moving between a list page and its
+   sub-page (Settings, Vehicles). Keyed on the open section so it replays each
+   time - reads as the title gliding + morphing into the new one. */
+.head-morph {
+  animation: headMorphIn 0.42s var(--ease-out-expo) both;
+}
+@keyframes headMorphIn {
+  from { opacity: 0; filter: blur(9px); transform: translateX(16px) scale(0.98); }
+  55%  { filter: blur(1.5px); }
+  to   { opacity: 1; filter: blur(0); transform: translateX(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .head-morph { animation: none; }
+}
+
+/* Detail page: the header already names the category, so hide each section's
+   own title (it just repeats it). Genuine sub-headers within a category - e.g.
+   "Archived" under People - opt back in with .settings-keep-head. */
+.settings-detail .section-block__title:not(.settings-keep-head) {
+  display: none;
+}
+
+/* Detail page: render all sections, show only the active category's. */
+.settings-detail > [data-cat] {
+  display: none;
+}
+.settings-detail[data-active="appearance"] > [data-cat="appearance"],
+.settings-detail[data-active="fuel"] > [data-cat="fuel"],
+.settings-detail[data-active="splitting"] > [data-cat="splitting"],
+.settings-detail[data-active="reminders"] > [data-cat="reminders"],
+.settings-detail[data-active="privacy"] > [data-cat="privacy"],
+.settings-detail[data-active="people"] > [data-cat="people"],
+.settings-detail[data-active="sync"] > [data-cat="sync"],
+.settings-detail[data-active="backup"] > [data-cat="backup"],
+.settings-detail[data-active="danger"] > [data-cat="danger"] {
+  display: block;
+}
 .wordmark-btn {
   background: none;
   border: none;
@@ -1836,6 +2475,9 @@ body.light .people-row__edit {
   font-weight: 800;
   font-size: 1.1rem;
   color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   transition: color 0.3s ease, transform 0.3s var(--ease-bounce);
 }
 .wordmark-btn:hover { color: var(--highlight); transform: translateY(-2px); }
@@ -1876,6 +2518,21 @@ body.light .people-row__edit {
 }
 .pay-chip__amt { font-weight: bold; color: #34d399; }
 .pay-chip__meta { color: var(--text-muted); }
+/* Tapping the amount/meta opens the payment editor. */
+.pay-chip__main {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.pay-chip__main:hover .pay-chip__meta { color: var(--text-primary); }
 .pay-chip__btn {
   display: inline-grid;
   place-items: center;

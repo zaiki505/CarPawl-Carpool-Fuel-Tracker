@@ -4,16 +4,19 @@ import {
   useEntriesForGroup,
   usePayments,
   usePeopleMap,
+  useSettings,
+  useCreditApplicationsForGroup,
 } from "../db/hooks.js";
 import { useApp } from "../app/AppContext.jsx";
 import { useEntryActions } from "../app/useEntryActions.js";
 import { updateGroup, removeGroup, setGroupOverrideDefault } from "../db/actions.js";
-import { groupBalances, outstanding, share } from "../lib/calc.js";
+import { groupBalances, outstanding, share, availableCredit } from "../lib/calc.js";
 import { formatMoney, formatMoneyShort, formatKmpl, formatDate, isFutureDate } from "../lib/format.js";
 import { whoName, personName } from "../lib/names.js";
-import { whoEquals, whoKey, ME } from "../lib/identity.js";
+import { whoEquals, whoKey, ME, person as mkPerson } from "../lib/identity.js";
 import { buildWhatsAppText, shareText } from "../lib/exportText.js";
 import { EntryCard } from "../components/EntryCard.jsx";
+import { UpcomingReveal } from "../components/UpcomingReveal.jsx";
 import { ActionMenu } from "../components/ui/ActionMenu.jsx";
 import { EmptyState, Field, NumberInput } from "../components/ui/Primitives.jsx";
 import { ScreenLoading } from "../components/ui/ScreenLoading.jsx";
@@ -25,6 +28,7 @@ import {
   Archive,
   Fuel,
   User,
+  Wallet,
 } from "../components/ui/Icons.jsx";
 
 export function GroupDetail({ groupId }) {
@@ -32,6 +36,8 @@ export function GroupDetail({ groupId }) {
   const entries = useEntriesForGroup(groupId) || [];
   const payments = usePayments() || [];
   const peopleMap = usePeopleMap();
+  const settings = useSettings();
+  const applications = useCreditApplicationsForGroup(groupId) || [];
   const { back, openSheet, askConfirm, toast } = useApp();
   const entryActions = useEntryActions();
 
@@ -60,9 +66,13 @@ export function GroupDetail({ groupId }) {
   if (!group || !peopleMap) return <ScreenLoading />;
 
   const isOwned = group.ownerType === "me";
-  const balances = groupBalances(entries, payments, { excludeMe: isOwned }).filter(
-    (b) => b.owed > 0 || b.credit > 0
-  );
+  // The owner every passenger owes / holds credit from (rule 1's pair).
+  const ownerWho = isOwned ? ME : mkPerson(group.ownerPersonId);
+  const balances = groupBalances(entries, payments, {
+    excludeMe: isOwned,
+    excludeWho: isOwned ? null : ownerWho,
+    applications,
+  }).filter((b) => b.owed > 0 || b.credit > 0);
   // Your own share across this vehicle's fill-ups (billed, covered by you), shown
   // for reference, never collectable.
   const meBilled = isOwned
@@ -72,13 +82,18 @@ export function GroupDetail({ groupId }) {
     : 0;
 
   // Fill-ups a person can have a payment applied to: those they still owe on,
-  // or (if they only hold credit) any fill-up they're on. Upcoming (future-dated) refuels are excluded.
+  // or (if they only hold credit) any fill-up they're on. Upcoming (future-dated)
+  // refuels ARE included so you can prepay them; the money math holds those
+  // payments out of the live balances until the refuel date arrives.
   const payableEntriesFor = (who) => {
-    const dueEntries = entries.filter((e) => !isFutureDate(e.date));
-    const owing = dueEntries.filter((e) => outstanding(e, who, payments) > 0.005);
+    const owing = entries.filter((e) => outstanding(e, who, payments, applications) > 0.005);
     if (owing.length) return owing;
-    return dueEntries.filter((e) => (e.passengers || []).some((p) => whoEquals(p.who, who)));
+    return entries.filter((e) => (e.passengers || []).some((p) => whoEquals(p.who, who)));
   };
+
+  function openApplyCredit(who) {
+    openSheet({ type: "applyCredit", groupId, debtorWho: who, creditorWho: ownerWho });
+  }
 
   function recordPaymentFor(who) {
     const payable = payableEntriesFor(who);
@@ -213,23 +228,33 @@ export function GroupDetail({ groupId }) {
           </h2>
           <div className="detail-panel">
             {balances.map((b, i) => (
-              <button
-                className="balance-row balance-row--tappable"
-                key={i}
-                type="button"
-                onClick={() => recordPaymentFor(b.who)}
-              >
-                <span className="balance-row__name">{whoName(b.who, peopleMap)}</span>
-                <span className="balance-row__vals">
-                  {b.owed > 0 && (
-                    <span className={isOwned ? "pos" : "neg"}>{formatMoney(b.owed)}</span>
-                  )}
-                  {b.owed > 0 && b.credit > 0 && <span className="faint"> · </span>}
-                  {b.credit > 0 && (
-                    <span className="accent-text">{formatMoneyShort(b.credit)} credit</span>
-                  )}
-                </span>
-              </button>
+              <div className="balance-row-wrap" key={i}>
+                <button
+                  className="balance-row balance-row--tappable"
+                  type="button"
+                  onClick={() => recordPaymentFor(b.who)}
+                >
+                  <span className="balance-row__name">{whoName(b.who, peopleMap)}</span>
+                  <span className="balance-row__vals">
+                    {b.owed > 0 && (
+                      <span className={isOwned ? "pos" : "neg"}>{formatMoney(b.owed)}</span>
+                    )}
+                    {b.owed > 0 && b.credit > 0 && <span className="faint"> · </span>}
+                    {b.credit > 0 && (
+                      <span className="accent-text">{formatMoneyShort(b.credit)} credit</span>
+                    )}
+                  </span>
+                </button>
+                {b.credit > 0.005 && b.owed > 0.005 && (
+                  <button
+                    className="apply-credit-btn"
+                    type="button"
+                    onClick={() => openApplyCredit(b.who)}
+                  >
+                    <Wallet size={13} /> Apply {formatMoneyShort(b.credit)} credit to a debt
+                  </button>
+                )}
+              </div>
             ))}
             {meBilled > 0.005 && (
               <div className="balance-row balance-row--me">
@@ -284,25 +309,31 @@ export function GroupDetail({ groupId }) {
             fuel entry.
           </EmptyState>
         ) : (
-          entries.map((e) => (
-            <EntryCard
-              key={e.id}
-              entry={e}
-              payments={payments}
-              peopleMap={peopleMap}
-              ownedByMe={isOwned}
-              ownerName={personName(group.ownerPersonId, peopleMap)}
-              fallbackTitle={group.name}
-              onRecordPayment={entryActions.onRecordPayment}
-              onEditPayment={entryActions.onEditPayment}
-              onDeletePayment={entryActions.onDeletePayment}
-              onQuickSettle={entryActions.onQuickSettle}
-              onClearPayments={entryActions.onClearPayments}
-              onEdit={entryActions.onEditEntry}
-              onDuplicate={entryActions.onDuplicateEntry}
-              onDelete={entryActions.onDeleteEntry}
-            />
-          ))
+          <UpcomingReveal
+            entries={entries}
+            windowValue={settings?.upcomingWindow}
+            renderEntry={(e) => (
+              <EntryCard
+                key={e.id}
+                entry={e}
+                payments={payments}
+                peopleMap={peopleMap}
+                ownedByMe={isOwned}
+                ownerName={personName(group.ownerPersonId, peopleMap)}
+                fallbackTitle={group.name}
+                applications={applications}
+                onRecordPayment={entryActions.onRecordPayment}
+                onEditPayment={entryActions.onEditPayment}
+                onDeletePayment={entryActions.onDeletePayment}
+                onQuickSettle={entryActions.onQuickSettle}
+                onClearPayments={entryActions.onClearPayments}
+                onEdit={entryActions.onEditEntry}
+                onDuplicate={entryActions.onDuplicateEntry}
+                onDelete={entryActions.onDeleteEntry}
+                onReverseCredit={entryActions.onReverseCredit}
+              />
+            )}
+          />
         )}
       </section>
 

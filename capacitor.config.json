@@ -1,0 +1,18 @@
+{
+  "appId": "com.carpawl.app",
+  "appName": "CarPawl",
+  "webDir": "dist",
+  "android": {
+    "backgroundColor": "#141418"
+  },
+  "plugins": {
+    "SocialLogin": {
+      "providers": {
+        "google": true,
+        "facebook": false,
+        "apple": false,
+        "twitter": false
+      }
+    }
+  }
+}

@@ -15,29 +15,41 @@
 
    Drive I/O and auth live in the Drive client (separate); this file is pure DB. */
 
-import { db, SETTINGS_ID } from "../db/db.js";
+import { db, SETTINGS_ID, DEVICE_LOCAL_SETTINGS } from "../db/db.js";
 import { SYNC_VERSION, SYNC_TABLES } from "./sync.js";
+
+/** Copy of a settings row with device-local sync bookkeeping removed, so it
+ *  never travels through Drive. */
+function stripDeviceLocal(settings) {
+  if (!settings) return settings;
+  const clean = { ...settings };
+  for (const k of DEVICE_LOCAL_SETTINGS) delete clean[k];
+  return clean;
+}
 
 /** Read the entire local DB into a snapshot (shape: see sync.js header). */
 export async function buildSnapshot() {
-  const [people, groups, entries, payments, deletions, settings] = await db.transaction(
-    "r",
-    db.people,
-    db.groups,
-    db.entries,
-    db.payments,
-    db.deletions,
-    db.settings,
-    async () =>
-      Promise.all([
-        db.people.toArray(),
-        db.groups.toArray(),
-        db.entries.toArray(),
-        db.payments.toArray(),
-        db.deletions.toArray(),
-        db.settings.get(SETTINGS_ID),
-      ])
-  );
+  const [people, groups, entries, payments, creditApplications, deletions, settings] =
+    await db.transaction(
+      "r",
+      db.people,
+      db.groups,
+      db.entries,
+      db.payments,
+      db.creditApplications,
+      db.deletions,
+      db.settings,
+      async () =>
+        Promise.all([
+          db.people.toArray(),
+          db.groups.toArray(),
+          db.entries.toArray(),
+          db.payments.toArray(),
+          db.creditApplications.toArray(),
+          db.deletions.toArray(),
+          db.settings.get(SETTINGS_ID),
+        ])
+    );
   return {
     app: "CarPawl",
     syncVersion: SYNC_VERSION,
@@ -45,7 +57,8 @@ export async function buildSnapshot() {
     groups,
     entries,
     payments,
-    settings: settings || null,
+    creditApplications,
+    settings: settings ? stripDeviceLocal(settings) : null,
     deletions,
   };
 }
@@ -68,6 +81,7 @@ export async function applySnapshot(snap) {
     db.groups,
     db.entries,
     db.payments,
+    db.creditApplications,
     db.deletions,
     db.settings,
     async () => {
@@ -80,7 +94,17 @@ export async function applySnapshot(snap) {
       if (snap.deletions?.length) await db.deletions.bulkPut(snap.deletions);
       // Only write a settings row that actually carries the fixed id, so a
       // degenerate merge of two empty snapshots can't drop an id-less row in.
-      if (snap.settings?.id) await db.settings.put(snap.settings);
+      // Preserve THIS device's local sync bookkeeping (connection/etag/hash) and
+      // never import those keys from a remote snapshot.
+      if (snap.settings?.id) {
+        const localSettings = await db.settings.get(SETTINGS_ID);
+        const next = { ...snap.settings };
+        for (const k of DEVICE_LOCAL_SETTINGS) {
+          if (localSettings && localSettings[k] !== undefined) next[k] = localSettings[k];
+          else delete next[k];
+        }
+        await db.settings.put(next);
+      }
     }
   );
 }

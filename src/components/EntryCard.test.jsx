@@ -54,9 +54,10 @@ describe("EntryCard", () => {
       expect(screen.queryByText("Upcoming")).toBeNull();
     });
 
-    // BUG-004 regression: upcoming refuels aren't counted in any balance, so
-    // recording a payment against one would be invisible money.
-    it("suppresses the Pay button on an upcoming refuel even though the passenger owes", () => {
+    // #4: upcoming refuels accept payments IN ADVANCE - the button is labelled
+    // "Prepay". The money is held out of the live balances (calc.balanceForWho
+    // skips future entries wholesale) until the refuel date arrives.
+    it("shows a Prepay button on an upcoming refuel so you can pay in advance", () => {
       render(
         <EntryCard
           entry={{ ...baseEntry, date: "2999-01-01" }}
@@ -66,7 +67,8 @@ describe("EntryCard", () => {
           onRecordPayment={() => {}}
         />
       );
-      expect(screen.queryByText("Pay")).toBeNull();
+      expect(screen.getByText("Prepay")).toBeInTheDocument();
+      expect(screen.queryByText("Pay")).toBeNull(); // labelled "Prepay", not "Pay"
     });
 
     it("still shows the Pay button on a past-dated refuel with the same passenger owing", () => {

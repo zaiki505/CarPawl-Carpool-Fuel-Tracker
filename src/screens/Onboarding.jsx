@@ -1,25 +1,132 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { GroupForm } from "../components/GroupForm.jsx";
 import { Field, MoneyInput } from "../components/ui/Primitives.jsx";
 import { Select } from "../components/ui/Select.jsx";
 import { markOnboarded } from "../db/actions.js";
-import { DEFAULTS, updateSettings } from "../db/db.js";
+import { DEFAULTS, updateSettings, readSettings } from "../db/db.js";
 import { CURRENCIES } from "../lib/currencies.js";
+import { useApp } from "../app/AppContext.jsx";
+import { connectAndPrepare, resolveConflict } from "../lib/syncEngine.js";
+import { readBackupFile, restoreFromBackup } from "../lib/backup.js";
+import { Cloud, Upload, Plus, Loader2 } from "../components/ui/Icons.jsx";
 
-/* First run (5). Two steps: add your car, then optionally set currency + default
-   fuel price. The prefs step is skippable - skipping keeps the defaults. The
-   onboarded flag is only flipped at the very end, so the car step defers it. */
+/* First run (5). Steps: choose how to start (fresh / from Google Drive / from a
+   backup), then add your car, then optionally set currency + default fuel price.
+   The prefs step is skippable. The onboarded flag is only flipped at the very
+   end (or set for you when you pull an existing account from Drive/backup). */
 export function Onboarding({ onDone }) {
-  const [step, setStep] = useState("car");
+  const [step, setStep] = useState("welcome");
 
   return (
     <div className="app-shell stagger" style={{ paddingBottom: "3rem" }}>
-      {step === "car" ? (
-        <CarStep onNext={() => setStep("prefs")} />
-      ) : (
-        <PrefsStep onFinish={onDone} />
+      {step === "welcome" && (
+        <WelcomeStep onFresh={() => setStep("car")} onDone={onDone} />
       )}
+      {step === "car" && <CarStep onNext={() => setStep("prefs")} />}
+      {step === "prefs" && <PrefsStep onFinish={onDone} />}
     </div>
+  );
+}
+
+function WelcomeStep({ onFresh, onDone }) {
+  const { toast } = useApp();
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+
+  async function connectDrive() {
+    setBusy(true);
+    try {
+      const res = await connectAndPrepare();
+      // A brand-new device has no local data, so a conflict is unlikely here;
+      // if one somehow occurs, merge so nothing just entered is lost.
+      if (res.status === "conflict") {
+        await resolveConflict("merge", res.remote, res.etag);
+      }
+      const s = await readSettings();
+      if (s.onboardedAt) {
+        onDone?.(); // pulled an existing CarPawl account from Drive
+      } else {
+        // Connected, but Drive had nothing set up yet - fall through to adding a car.
+        toast("No CarPawl data in Google Drive yet - let's add your car.");
+        onFresh?.();
+      }
+    } catch (e) {
+      toast(e.message || "Could not connect to Google Drive", "error");
+      setBusy(false);
+    }
+  }
+
+  async function onRestoreFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!file) return;
+    setBusy(true);
+    try {
+      const backup = await readBackupFile(file);
+      await restoreFromBackup(backup);
+      await markOnboarded(); // a restored backup means the app is set up
+      onDone?.();
+    } catch (err) {
+      toast(err.message || "Could not restore that file", "error");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <header className="screen-head" style={{ marginTop: "2rem" }}>
+        <div>
+          <p className="screen-head__kicker">Welcome to CarPawl</p>
+          <h1 className="screen-head__title">Set up this device</h1>
+          <p className="screen-head__sub">
+            Starting fresh, or already using CarPawl somewhere else? Everything
+            stays on your device unless you choose to sync.
+          </p>
+        </div>
+      </header>
+
+      <div className="detail-panel field-grid">
+        <button
+          className="cta-primary btn-block"
+          type="button"
+          onClick={onFresh}
+          disabled={busy}
+        >
+          <Plus size={16} /> Start fresh
+        </button>
+
+        <button
+          className="cta-secondary btn-block"
+          type="button"
+          onClick={connectDrive}
+          disabled={busy}
+        >
+          {busy ? <Loader2 size={15} className="spin" /> : <Cloud size={15} />} Sync from
+          Google Drive
+        </button>
+
+        <button
+          className="cta-secondary btn-block"
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+        >
+          <Upload size={15} /> Restore from a backup file
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={onRestoreFile}
+        />
+
+        <p className="field-hint" style={{ marginTop: "0.2rem", textAlign: "center" }}>
+          Sync uses your Google Drive's hidden app folder - it never touches your
+          other Drive files.
+        </p>
+      </div>
+    </>
   );
 }
 
@@ -28,7 +135,7 @@ function CarStep({ onNext }) {
     <>
       <header className="screen-head" style={{ marginTop: "2rem" }}>
         <div>
-          <p className="screen-head__kicker">Welcome to CarPawl 🐾</p>
+          <p className="screen-head__kicker">Welcome to CarPawl</p>
           <h1 className="screen-head__title">Let's add your car</h1>
           <p className="screen-head__sub">
             Track your own fuel spending first - you can add carpools you ride in

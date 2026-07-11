@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, it, expect } from "vitest";
-import { db, SETTINGS_ID } from "../db/db.js";
+import { db, SETTINGS_ID, DEVICE_LOCAL_SETTINGS } from "../db/db.js";
 import { buildSnapshot, applySnapshot } from "./snapshot.js";
 import { mergeSnapshots, SYNC_TABLES } from "./sync.js";
 import * as actions from "../db/actions.js";
@@ -77,6 +77,51 @@ describe("applySnapshot", () => {
   it("does not write a settings row that lacks the fixed id", async () => {
     await applySnapshot(remoteSnap({ settings: { onboardedAt: null } }));
     expect(await db.settings.get(SETTINGS_ID)).toBeUndefined();
+  });
+});
+
+describe("device-local settings never travel through sync", () => {
+  it("buildSnapshot strips device-local keys but keeps user prefs", async () => {
+    await db.settings.put({
+      id: SETTINGS_ID,
+      currency: "MYR",
+      onboardedAt: "2026-05-01T00:00:00Z",
+      updatedAt: "2026-05-01T00:00:00Z",
+      gdriveConnected: true,
+      gdriveEtag: "local-etag",
+      lastSyncedAt: "2026-06-01T00:00:00Z",
+      lastLocalHash: "abc",
+    });
+    const snap = await buildSnapshot();
+    for (const k of DEVICE_LOCAL_SETTINGS) expect(snap.settings[k]).toBeUndefined();
+    expect(snap.settings.currency).toBe("MYR"); // user prefs still sync
+    expect(snap.settings.onboardedAt).toBe("2026-05-01T00:00:00Z");
+  });
+
+  it("applySnapshot preserves this device's connection state and ignores remote's", async () => {
+    await db.settings.put({
+      id: SETTINGS_ID,
+      currency: "MYR",
+      updatedAt: "2026-05-01T00:00:00Z",
+      gdriveConnected: true,
+      gdriveEtag: "local-etag",
+    });
+    // A remote snapshot that (wrongly) carries someone else's connection state.
+    await applySnapshot(
+      remoteSnap({
+        settings: {
+          id: SETTINGS_ID,
+          currency: "USD",
+          updatedAt: "2026-06-01T00:00:00Z",
+          gdriveConnected: false,
+          gdriveEtag: "remote-etag",
+        },
+      })
+    );
+    const s = await db.settings.get(SETTINGS_ID);
+    expect(s.currency).toBe("USD"); // synced pref applied
+    expect(s.gdriveConnected).toBe(true); // local connection state kept
+    expect(s.gdriveEtag).toBe("local-etag"); // local etag kept, remote ignored
   });
 });
 

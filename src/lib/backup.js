@@ -1,3 +1,6 @@
+import { Capacitor } from "@capacitor/core";
+import { Filesystem, Directory, Encoding } from "@capacitor/filesystem";
+import { Share } from "@capacitor/share";
 import { db, SETTINGS_ID, ensureSettings } from "../db/db.js";
 
 /* Manual JSON backup & restore. This is the always-available baseline;
@@ -23,21 +26,45 @@ export async function collectBackup() {
   };
 }
 
-/** Trigger a download of the full backup as a timestamped .json file. */
+/**
+ * Export the full backup as a timestamped .json file.
+ *  - Native: write it to the app cache and open the OS share sheet so the user
+ *    can save it to Files/Drive/email etc. (a blob `<a download>` does nothing
+ *    useful inside an Android WebView).
+ *  - Web: the classic blob download.
+ * @returns {Promise<{ backup, delivered: 'shared'|'downloaded' }>}
+ */
 export async function exportToFile() {
   const backup = await collectBackup();
   const json = JSON.stringify(backup, null, 2);
+  const stamp = new Date().toISOString().slice(0, 10);
+  const filename = `carpawl-backup-${stamp}.json`;
+
+  if (Capacitor.isNativePlatform()) {
+    const written = await Filesystem.writeFile({
+      path: filename,
+      data: json,
+      directory: Directory.Cache,
+      encoding: Encoding.UTF8,
+    });
+    await Share.share({
+      title: "CarPawl backup",
+      dialogTitle: "Save or send your CarPawl backup",
+      files: [written.uri],
+    });
+    return { backup, delivered: "shared" };
+  }
+
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
-  const stamp = new Date().toISOString().slice(0, 10);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `carpawl-backup-${stamp}.json`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-  return backup;
+  return { backup, delivered: "downloaded" };
 }
 
 /** Validate a parsed backup object, throwing a friendly error if it's not one. */

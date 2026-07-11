@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
 import { useApp } from "../../app/AppContext.jsx";
+import { haptic } from "../../lib/haptics.js";
 
 /* Confirmation dialog for destructive / irreversible actions (§8). Driven by
    the promise-based askConfirm() in AppContext. */
@@ -41,7 +42,10 @@ export function ConfirmModal() {
           <button
             className={confirm.danger ? "cta-primary btn-danger" : "cta-primary"}
             type="button"
-            onClick={() => resolveConfirm(true)}
+            onClick={() => {
+              haptic(confirm.danger ? "medium" : "light");
+              resolveConfirm(true);
+            }}
           >
             {confirm.confirmLabel}
           </button>

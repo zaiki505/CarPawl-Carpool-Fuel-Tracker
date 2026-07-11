@@ -99,6 +99,18 @@ export function usePaymentsForEntry(entryId) {
   );
 }
 
+/** All credit-application ledger rows (active + reversed, for history/audit). */
+export function useCreditApplications() {
+  return useLiveQuery(() => db.creditApplications.toArray(), []);
+}
+
+export function useCreditApplicationsForGroup(groupId) {
+  return useLiveQuery(
+    () => (groupId ? db.creditApplications.where("groupId").equals(groupId).toArray() : []),
+    [groupId]
+  );
+}
+
 export function useSettings() {
   return useLiveQuery(() => readSettings(), []);
 }
@@ -118,11 +130,12 @@ export function useEntry(entryId) {
 export function useAllData() {
   const dayKey = useDayKey();
   return useLiveQuery(async () => {
-    const [groups, entries, payments, people, settings] = await Promise.all([
+    const [groups, entries, payments, people, creditApplications, settings] = await Promise.all([
       db.groups.toArray(),
       db.entries.toArray(),
       db.payments.toArray(),
       db.people.toArray(),
+      db.creditApplications.toArray(),
       readSettings(),
     ]);
     // Newest first, so Dashboard "recent" and History read chronologically.
@@ -154,6 +167,7 @@ export function useAllData() {
       entries,
       entriesByGroup,
       payments,
+      creditApplications,
       people,
       peopleMap,
       settings,

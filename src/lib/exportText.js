@@ -1,3 +1,5 @@
+import { Capacitor } from "@capacitor/core";
+import { Share } from "@capacitor/share";
 import { groupBalances } from "./calc.js";
 import { formatMoney, formatMoneyShort, formatDate } from "./format.js";
 import { whoName } from "./names.js";
@@ -40,11 +42,24 @@ export function buildWhatsAppText(group, entries, payments, peopleMap) {
 }
 
 /**
- * Share text via the native share sheet, falling back to clipboard.
+ * Share text via the OS share sheet, falling back to clipboard.
+ * On native (Android/iOS) uses @capacitor/share - the WebView often doesn't
+ * implement navigator.share, so relying on the Web Share API alone would
+ * silently degrade to clipboard on the very platform where a real share sheet
+ * matters most. On web it uses navigator.share when available, else clipboard.
  * @returns {'shared'|'copied'|'failed'}
  */
 export async function shareText(text, title) {
-  if (navigator.share) {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      await Share.share({ title, text, dialogTitle: title });
+      return "shared";
+    } catch (e) {
+      // User cancelled the sheet - treat as a non-error, don't spam clipboard.
+      if (e?.message && /cancel/i.test(e.message)) return "shared";
+      // Genuine failure - fall through to clipboard below.
+    }
+  } else if (navigator.share) {
     try {
       await navigator.share({ title, text });
       return "shared";

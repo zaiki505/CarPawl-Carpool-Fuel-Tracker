@@ -1,4 +1,5 @@
 import React from "react";
+import { haptic } from "../../lib/haptics.js";
 
 /* Small building blocks composed from the token classes in app.css. Kept
    presentational - no data logic. */
@@ -158,7 +159,10 @@ export function Segment({ options, value, onChange }) {
           ref={(el) => (btnRefs.current[o.value] = el)}
           type="button"
           aria-pressed={value === o.value}
-          onClick={() => onChange(o.value)}
+          onClick={() => {
+            if (value !== o.value) haptic("selection");
+            onChange(o.value);
+          }}
         >
           {o.label}
         </button>

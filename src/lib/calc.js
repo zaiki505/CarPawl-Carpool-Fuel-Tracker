@@ -286,15 +286,12 @@ export function entryCollectible(entry, { ownedByMe = false } = {}) {
 }
 
 /** Sum of payments for a given who against a given entry.
- *  DECISION (asymmetric on purpose): a payment's own `date` is never checked
- *  against isFutureDate - it counts immediately once recorded, unlike an
- *  entry's date which gates whether its share counts at all (see
- *  balanceForWho). Recording a payment is an intentional user action (money
- *  changed hands), so there's no "not in effect yet" state for it the way
- *  there is for a merely-scheduled refuel. In practice this is moot anyway:
- *  the UI only lets you record a payment against an entry that isn't itself
- *  upcoming (see EntryCard's `canSettle`/Pay-button gate and GroupDetail's
- *  payableEntriesFor), so a payment normally can't outrun its own entry. */
+ *  A payment's own `date` is never checked against isFutureDate - what gates
+ *  whether it counts is the ENTRY's date. balanceForWho skips future entries
+ *  wholesale, so a payment recorded IN ADVANCE against an upcoming refuel is
+ *  held out of the live balances (along with that refuel's shares) until the
+ *  refuel date arrives, then nets out. This is how "prepay an upcoming refuel"
+ *  works (see EntryCard's Prepay button and GroupDetail's payableEntriesFor). */
 export function paymentsFor(entry, who, payments) {
   return (payments || [])
     .filter((pm) => pm.entryId === entry.id && whoEquals(pm.who, who))
@@ -306,14 +303,18 @@ export function paymentsFor(entry, who, payments) {
  *   outstanding = share - sum payments(who, entry)
  * Can go negative (overpayment / credit).
  * ------------------------------------------------------------------ */
-export function outstanding(entry, who, payments) {
-  return share(entry, who) - paymentsFor(entry, who, payments);
+export function outstanding(entry, who, payments, applications = []) {
+  return (
+    share(entry, who) -
+    paymentsFor(entry, who, payments) -
+    appliedCreditTo(entry.id, who, applications)
+  );
 }
 
 /** Status label for a (entry, who) pair. */
-export function statusOf(entry, who, payments) {
+export function statusOf(entry, who, payments, applications = []) {
   const s = share(entry, who);
-  const out = outstanding(entry, who, payments);
+  const out = outstanding(entry, who, payments, applications);
   // tolerate floating point dust
   const EPS = 0.005;
   if (out < -EPS) return "credit";
@@ -328,17 +329,27 @@ export function statusOf(entry, who, payments) {
  *   credit = sum |outstanding(entry, who)| over entries where outstanding < 0
  * Never netted together.
  * ------------------------------------------------------------------ */
-export function balanceForWho(groupEntries, who, payments, { ref = new Date() } = {}) {
+export function balanceForWho(groupEntries, who, payments, { ref = new Date(), applications = [] } = {}) {
   // Ignore sub-cent dust so a fully-paid entry never leaves a phantom balance.
   const EPS = 0.005;
   let owed = 0;
-  let credit = 0;
+  let grossCredit = 0;
   for (const entry of groupEntries) {
     if (isFutureDate(entry.date, ref)) continue;
-    const out = outstanding(entry, who, payments);
+    // `owed` already reflects any credit applied against this entry (via
+    // outstanding). `grossCredit` is the raw overpayment before offsetting.
+    const out = outstanding(entry, who, payments, applications);
     if (out > EPS) owed += out;
-    else if (out < -EPS) credit += Math.abs(out);
+    const over = paymentsFor(entry, who, payments) - share(entry, who);
+    if (over > EPS) grossCredit += over;
   }
+  // Credit already applied to debts in this set is "spent" - what's left is what
+  // the person can still offset with (or hold). So credit shown = available.
+  const entryIds = new Set(groupEntries.map((e) => e.id));
+  const applied = activeApplications(applications)
+    .filter((a) => entryIds.has(a.targetEntryId) && whoEquals(a.debtorWho, who))
+    .reduce((s, a) => s + (Number(a.amount) || 0), 0);
+  const credit = Math.max(0, grossCredit - applied);
   return { owed, credit };
 }
 
@@ -347,23 +358,109 @@ export function balanceForWho(groupEntries, who, payments, { ref = new Date() } 
  * cumulative {owed, credit} balance. Used by Group Detail.
  * @returns {Array<{ who, owed, credit }>}
  */
-export function groupBalances(groupEntries, payments, { excludeMe = false } = {}) {
+export function groupBalances(
+  groupEntries,
+  payments,
+  { excludeMe = false, excludeWho = null, applications = [] } = {}
+) {
+  // The vehicle owner (driver who paid) is never owed to themselves - excluded
+  // here whether that's "me" (own car) or the carpool's owner person.
+  const excludeKey = excludeWho ? whoKey(excludeWho) : null;
   const map = new Map();
   for (const entry of groupEntries) {
     for (const p of entry.passengers || []) {
-      // In your own vehicle, "Me" is tracked for reference but never owed to
-      // you, so it's excluded from the owed/credit balances.
       if (excludeMe && isMe(p.who)) continue;
+      if (excludeKey && whoKey(p.who) === excludeKey) continue;
       const key = whoKey(p.who);
       if (!map.has(key)) map.set(key, { who: p.who });
     }
   }
   const rows = [];
   for (const { who } of map.values()) {
-    const { owed, credit } = balanceForWho(groupEntries, who, payments);
+    const { owed, credit } = balanceForWho(groupEntries, who, payments, { applications });
     rows.push({ who, owed, credit });
   }
   return rows;
+}
+
+/* ------------------------------------------------------------------ *
+ * Credit offset (applying a debtor's overpayment against their debts)
+ *
+ * Credit is never a stored number - it's the debtor's gross overpayment across
+ * the pair's entries, minus what a stored `creditApplications` ledger has
+ * already offset. Applications target a specific debt entry; reversing one (soft
+ * `reversedAt`) simply drops it from these sums, restoring both sides.
+ * ------------------------------------------------------------------ */
+
+/** Active (non-reversed) credit applications. */
+export function activeApplications(applications) {
+  return (applications || []).filter((a) => !a.reversedAt);
+}
+
+/** Credit currently applied against a specific (entry, who) debt. */
+export function appliedCreditTo(entryId, who, applications) {
+  return activeApplications(applications)
+    .filter((a) => a.targetEntryId === entryId && whoEquals(a.debtorWho, who))
+    .reduce((s, a) => s + (Number(a.amount) || 0), 0);
+}
+
+/** Gross overpayment (credit) a debtor holds across a set of entries. Raw - it
+ *  does NOT subtract applications (those reduce debts, not the source). */
+export function creditPoolFor(groupEntries, who, payments, { ref = new Date() } = {}) {
+  const EPS = 0.005;
+  let pool = 0;
+  for (const entry of groupEntries) {
+    if (isFutureDate(entry.date, ref)) continue;
+    const over = paymentsFor(entry, who, payments) - share(entry, who);
+    if (over > EPS) pool += over;
+  }
+  return pool;
+}
+
+/** Sum of a debtor's active applications whose target is in this entry set. */
+function appliedTotalFor(groupEntries, who, applications) {
+  const ids = new Set(groupEntries.map((e) => e.id));
+  return activeApplications(applications)
+    .filter((a) => ids.has(a.targetEntryId) && whoEquals(a.debtorWho, who))
+    .reduce((s, a) => s + (Number(a.amount) || 0), 0);
+}
+
+/** Credit still available to apply for a pair (pool - active applications). */
+export function availableCredit(groupEntries, who, payments, applications, { ref = new Date() } = {}) {
+  const pool = creditPoolFor(groupEntries, who, payments, { ref });
+  return Math.max(0, pool - appliedTotalFor(groupEntries, who, applications));
+}
+
+/** A debtor's outstanding debts (post-credit) across a set of entries - the
+ *  list the "apply credit" picker offers. Sorted newest-first for display. */
+export function outstandingDebtsFor(groupEntries, who, payments, applications, { ref = new Date() } = {}) {
+  const EPS = 0.005;
+  const out = [];
+  for (const entry of groupEntries) {
+    if (isFutureDate(entry.date, ref)) continue;
+    const amt = outstanding(entry, who, payments, applications);
+    if (amt > EPS) out.push({ entry, amount: amt });
+  }
+  out.sort((a, b) => (parseISODate(b.entry.date) || 0) - (parseISODate(a.entry.date) || 0));
+  return out;
+}
+
+/** The derived credit-record view (rule 7): who holds it, who it's from, the
+ *  original overpayment, the unapplied remainder, and its applications. */
+export function creditRecordFor(groupEntries, who, ownerWho, payments, applications, { ref = new Date() } = {}) {
+  const original = creditPoolFor(groupEntries, who, payments, { ref });
+  const ids = new Set(groupEntries.map((e) => e.id));
+  const apps = activeApplications(applications).filter(
+    (a) => ids.has(a.targetEntryId) && whoEquals(a.debtorWho, who)
+  );
+  const appliedTotal = apps.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+  return {
+    holder: who,
+    from: ownerWho,
+    original,
+    remaining: Math.max(0, original - appliedTotal),
+    applications: apps,
+  };
 }
 
 /* ------------------------------------------------------------------ *

@@ -13,7 +13,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["favicon.svg", "icons/*.png"],
+      includeAssets: ["favicon.png", "icons/*.png"],
       workbox: {
         // Precache everything the built app shell needs, including self-hosted
         // font woff2 files, so nothing depends on the network at runtime.

@@ -7,6 +7,8 @@ import { Sheet } from "./ui/Sheet.jsx";
 import { PaymentSheet } from "./PaymentSheet.jsx";
 import { AddEntrySheet } from "./AddEntrySheet.jsx";
 import { GroupForm } from "./GroupForm.jsx";
+import { SelectionBar } from "./SelectionBar.jsx";
+import { ApplyCreditSheet } from "./ApplyCreditSheet.jsx";
 import { useApp } from "../app/AppContext.jsx";
 import { useSettings, usePeopleMap } from "../db/hooks.js";
 import { setFormatConfig } from "../lib/format.js";
@@ -91,10 +93,22 @@ export function AppFrame() {
           entryId={sheet.entryId}
           preselectGroupId={sheet.groupId}
           duplicateOf={sheet.duplicateOf}
+          focusField={sheet.focusField}
+          multiEntries={sheet.multiEntries}
           onClose={closeSheet}
         />
       )}
 
+      {sheet?.type === "applyCredit" && (
+        <ApplyCreditSheet
+          groupId={sheet.groupId}
+          debtorWho={sheet.debtorWho}
+          creditorWho={sheet.creditorWho}
+          onClose={closeSheet}
+        />
+      )}
+
+      <SelectionBar />
       <ConfirmModal />
       <Toasts />
     </>

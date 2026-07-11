@@ -2,6 +2,7 @@ import React from "react";
 import { AppProvider } from "./app/AppContext.jsx";
 import { AppFrame } from "./components/AppFrame.jsx";
 import { ErrorBoundary } from "./components/ui/ErrorBoundary.jsx";
+import { BiometricGate } from "./components/ui/BiometricGate.jsx";
 
 const CRASH_FALLBACK = (
   <div
@@ -36,7 +37,9 @@ export default function App() {
   return (
     <ErrorBoundary fallback={CRASH_FALLBACK}>
       <AppProvider>
-        <AppFrame />
+        <BiometricGate>
+          <AppFrame />
+        </BiometricGate>
       </AppProvider>
     </ErrorBoundary>
   );

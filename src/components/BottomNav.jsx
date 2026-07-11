@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useApp } from "../app/AppContext.jsx";
 import { LayoutDashboard, Car, History, Settings, Plus } from "./ui/Icons.jsx";
+import { haptic } from "../lib/haptics.js";
 
 const ITEMS = [
   { key: "dashboard", label: "Home", Icon: LayoutDashboard },
@@ -65,6 +66,7 @@ export function BottomNav({ onAdd }) {
       <button
         className={"fab-add" + (scrolling ? " fab-add--scrolling" : "")}
         onClick={() => {
+          haptic("light");
           setScrolling(false);
           onAdd();
         }}
@@ -88,7 +90,10 @@ export function BottomNav({ onAdd }) {
               ref={(el) => (itemRefs.current[key] = el)}
               className="bottom-nav__item"
               aria-current={tab === key ? "page" : undefined}
-              onClick={() => goTab(key)}
+              onClick={() => {
+                if (tab !== key) haptic("selection");
+                goTab(key);
+              }}
               type="button"
             >
               <Icon size={22} />

@@ -18,7 +18,7 @@ export function Groups() {
   return (
     <div className="app-shell stagger">
       <header className="screen-head">
-        <div>
+        <div className="head-morph">
           <p className="screen-head__kicker">Your vehicles & carpools</p>
           <h1 className="screen-head__title">Vehicles</h1>
         </div>

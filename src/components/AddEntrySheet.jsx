@@ -1,7 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Sheet } from "./ui/Sheet.jsx";
 import { Field, Segment } from "./ui/Primitives.jsx";
 import { DatePicker } from "./ui/DatePicker.jsx";
+import { Select } from "./ui/Select.jsx";
+import { RECURRENCE_OPTIONS } from "../lib/recurrence.js";
 import {
   useGroups,
   usePeople,
@@ -34,9 +36,12 @@ import { Check, Plus, Car, Fuel } from "./ui/Icons.jsx";
    gets a distance defaulting to the full trip, shortenable for early drop-off.
    Edit mode warns before recalculating balances and blocks removing a
    passenger who already has payments (8). */
-export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose }) {
+export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusField, multiEntries, onClose }) {
   const editing = Boolean(entryId);
   const duplicating = Boolean(duplicateOf) && !editing;
+  // Multi-edit: several entries selected. Seed from the first; on save, only the
+  // fields you actually changed get written onto every selected entry (#5).
+  const multiEdit = Array.isArray(multiEntries) && multiEntries.length > 1;
   const groups = useGroups() || [];
   const people = usePeople() || [];
   const peopleMap = usePeopleMap();
@@ -44,7 +49,10 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
   const settings = useSettings();
   const existing = useEntry(entryId);
   const entryPayments = usePaymentsForEntry(entryId) || [];
-  const { toast, askConfirm } = useApp();
+  const { toast, askConfirm, clearSelection } = useApp();
+  // Whether the passenger set/values were touched this session - gates whether
+  // passengers are included in a multi-edit patch.
+  const [paxEdited, setPaxEdited] = useState(false);
 
   // Order groups by most-recently-used (latest entry date), owned first as tiebreak.
   const orderedGroups = useMemo(() => {
@@ -97,6 +105,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
   const [maintenancePct, setMaintenancePct] = useState("");
   // Custom method: how the leftover pool splits - 'equal' | 'distance'.
   const [customRemainderSplit, setCustomRemainderSplit] = useState("equal");
+  const [recurrence, setRecurrence] = useState("none");
 
   // One-time initialisation once data is available. `src` seeds both edit mode
   // (from the loaded entry) and duplicate mode (from the passed-in entry). A
@@ -142,6 +151,9 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
       );
       setDate(editing ? src.date : todayISODate());
       setTitle(src.title || "");
+      // Keep the cadence when editing; a duplicate starts as a fresh one-off so
+      // it doesn't silently join the original's recurring series.
+      setRecurrence(editing ? src.recurrence || "none" : "none");
       setReady(true);
     } else if (editing) {
       // still waiting for the entry to load - leave ready=false
@@ -224,9 +236,11 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
 
   // Custom split can over-collect: fixed (pinned) amounts are never reduced
   // even when their sum exceeds this trip's actual cost (see calc.js customRawShare, the pool floors at 0). 
-  // Flag it here instead of changing the math.
   const overrideSum = previewEntry.passengers.reduce(
-    (s, p) => s + (p.manualOverride != null ? p.manualOverride : 0),
+    (s, p) =>
+      isOwned && p.who?.type === "me"
+        ? s
+        : s + (p.manualOverride != null ? p.manualOverride : 0),
     0
   );
   const overCollectAmount = isDriverComp
@@ -248,7 +262,13 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
     // "Me" is selectable in any vehicle now. In your own vehicle your share is
     // tracked for reference but never owed to you (18 update).
     if (group) list.push(ME);
-    for (const p of people) list.push(mkPerson(p.id));
+    // In a carpool the owner IS the driver who paid the pump - they can't be a
+    // passenger who owes themselves, so they're not pickable here.
+    const ownerPersonId = group?.ownerType === "person" ? group.ownerPersonId : null;
+    for (const p of people) {
+      if (p.id === ownerPersonId) continue;
+      list.push(mkPerson(p.id));
+    }
     return list;
   }, [group, people]);
 
@@ -257,6 +277,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
   const others = candidates.filter((w) => !usualWhoKeys.has(whoKey(w)));
 
   function togglePassenger(who) {
+    setPaxEdited(true);
     const key = whoKey(who);
     setPassengers((prev) => {
       if (prev.some((p) => whoKey(p.who) === key)) {
@@ -279,6 +300,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
   }
 
   function setPassengerDistance(key, value) {
+    setPaxEdited(true);
     setPassengers((prev) =>
       prev.map((p) =>
         whoKey(p.who) === key ? { ...p, distance: value, custom: true } : p
@@ -287,12 +309,14 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
   }
 
   function setPassengerOverride(key, value) {
+    setPaxEdited(true);
     setPassengers((prev) =>
       prev.map((p) => (whoKey(p.who) === key ? { ...p, override: value } : p))
     );
   }
 
   function toggleTollsPresent(who) {
+    setPaxEdited(true);
     const key = whoKey(who);
     setTollsPresentKeys((prev) => {
       const base = prev ?? new Set(syncedPassengers.map((p) => whoKey(p.who)));
@@ -342,6 +366,14 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
     }
     if (!date) {
       toast("Pick a date.", "error");
+      return;
+    }
+    // A carpool is a shared ride in someone else's car - it must have at least
+    // one passenger to split with (usually you). A zero-passenger "carpool"
+    // tracks nobody owing anybody, which is meaningless. Your OWN vehicle can
+    // still be a solo refuel with no passengers.
+    if (!isOwned && syncedPassengers.length === 0) {
+      toast("Add at least one passenger - a carpool trip can't be solo (usually that's you).", "error");
       return;
     }
     // When editing/duplicating without touching any fuel figure, keep the
@@ -415,7 +447,95 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
       maintenancePct: isDriverComp ? parseNum(maintenancePct) || 0 : 0,
       tollsPresentWho: isDriverComp ? previewEntry.tollsPresentWho : null,
       passengers: payloadPassengers,
+      recurrence,
     };
+
+    // Multi-edit: write only the fields that differ from the seed entry onto
+    // every selected entry, after a confirm. Untouched fields are left alone so
+    // each entry keeps its own values.
+    if (multiEdit) {
+      const rep = src || {};
+      const patch = {};
+      if (payload.date !== rep.date) patch.date = payload.date;
+      if ((payload.title || null) !== (rep.title || null)) patch.title = payload.title;
+      if (payload.splitMethod !== rep.splitMethod) patch.splitMethod = payload.splitMethod;
+      if ((payload.customRemainderSplit || "equal") !== (rep.customRemainderSplit || "equal"))
+        patch.customRemainderSplit = payload.customRemainderSplit;
+      if ((payload.recurrence || null) !== (rep.recurrence || null))
+        patch.recurrence = payload.recurrence;
+      if ((payload.tolls || 0) !== (rep.tolls || 0)) patch.tolls = payload.tolls;
+      if ((payload.parking || 0) !== (rep.parking || 0)) patch.parking = payload.parking;
+      if ((payload.maintenancePct || 0) !== (rep.maintenancePct || 0))
+        patch.maintenancePct = payload.maintenancePct;
+      if (fuelEdited) {
+        patch.totalCost = payload.totalCost;
+        patch.totalLiters = payload.totalLiters;
+        patch.totalDistance = payload.totalDistance;
+        patch.fuelPricePerLiter = payload.fuelPricePerLiter;
+        patch.hasMeasuredEfficiency = payload.hasMeasuredEfficiency;
+      }
+      if (paxEdited) {
+        patch.passengers = payload.passengers;
+        patch.tollsPresentWho = payload.tollsPresentWho;
+      }
+      const keys = Object.keys(patch);
+      if (keys.length === 0) {
+        toast("Change a field to apply it to all selected entries.", "error");
+        return;
+      }
+      const fuelKeys = new Set([
+        "totalCost",
+        "totalLiters",
+        "totalDistance",
+        "fuelPricePerLiter",
+        "hasMeasuredEfficiency",
+      ]);
+      const labelFor = {
+        date: "date",
+        title: "title",
+        splitMethod: "split method",
+        customRemainderSplit: "leftover split",
+        recurrence: "repeat schedule",
+        tolls: "tolls",
+        parking: "parking",
+        maintenancePct: "maintenance %",
+        passengers: "passengers",
+        tollsPresentWho: "passengers",
+      };
+      const labels = [];
+      let fuelAdded = false;
+      for (const k of keys) {
+        if (fuelKeys.has(k)) {
+          if (!fuelAdded) {
+            labels.push("fuel figures");
+            fuelAdded = true;
+          }
+          continue;
+        }
+        const l = labelFor[k] || k;
+        if (!labels.includes(l)) labels.push(l);
+      }
+      const ok = await askConfirm({
+        title: `Apply to ${multiEntries.length} entries?`,
+        body: `This overwrites ${labels.join(", ")} on all ${multiEntries.length} selected entries with the values set here. Their other details stay as they are. This can't be undone.`,
+        confirmLabel: "Apply to all",
+        danger: true,
+      });
+      if (!ok) return;
+      setBusy(true);
+      try {
+        for (const e of multiEntries) {
+          await updateEntry(e.id, patch);
+        }
+        clearSelection?.();
+        toast(`Updated ${multiEntries.length} entries`);
+        onClose();
+      } catch (err) {
+        toast(err.message, "error");
+        setBusy(false);
+      }
+      return;
+    }
 
     setBusy(true);
     try {
@@ -461,10 +581,50 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
     setFuelEdited(true);
   };
 
+  // Opened via a tap on a specific card detail/chip: once the form has seeded,
+  // scroll that field into view and focus it (see EntryCard tap targets / #6).
+  useEffect(() => {
+    if (!ready || !focusField) return;
+    const idFor = {
+      vehicle: "ae-vehicle",
+      cost: "ae-cost",
+      liters: "ae-liters",
+      distance: "ae-distance",
+      fuelPrice: "ae-fuelprice",
+      efficiency: "ae-efficiency",
+      tolls: "ae-tolls",
+      date: "ae-date",
+      recurrence: "ae-recurrence",
+    };
+    const id = idFor[focusField];
+    if (!id) return;
+    const t = setTimeout(() => {
+      const anchor = document.getElementById(id);
+      if (!anchor) return;
+      anchor.scrollIntoView({ behavior: "smooth", block: "center" });
+      const control = anchor.matches("input, select, textarea, button")
+        ? anchor
+        : anchor.querySelector("input, select, textarea, button");
+      if (control) {
+        control.focus({ preventScroll: true });
+        if (typeof control.select === "function") {
+          try {
+            control.select();
+          } catch {
+            /* not a text input */
+          }
+        }
+      }
+    }, 160);
+    return () => clearTimeout(t);
+  }, [ready, focusField]);
+
   return (
     <Sheet
       title={
-        editing
+        multiEdit
+          ? `Edit ${multiEntries.length} entries`
+          : editing
           ? isOwned ? "Edit refuel" : "Edit trip"
           : duplicating
           ? isOwned ? "Duplicate refuel" : "Duplicate trip"
@@ -472,7 +632,13 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
       }
       onClose={onClose}
       banner={
-        group ? (
+        multiEdit ? (
+          <div className="sheet-banner">
+            <span className="sheet-banner__label">
+              Editing {multiEntries.length} entries - only the fields you change get applied to all of them.
+            </span>
+          </div>
+        ) : group ? (
           <div className="sheet-banner">
             <span className="sheet-banner__label">{bannerLabel}</span>
             <span
@@ -505,7 +671,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
         <p className="muted">Add a car first, then log a refuel.</p>
       ) : (
         <div className="field-grid">
-          <div className="form-section-head">Vehicle</div>
+          <div className="form-section-head" id="ae-vehicle">Vehicle</div>
           {/* Group picker */}
           <Field label="Which car / carpool?">
             <div className="chip-wrap">
@@ -529,6 +695,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
               recalculate each other. Whichever you type into becomes the source. */}
           <Field label="Fuel price (RM/L)">
             <input
+              id="ae-fuelprice"
               type="number"
               inputMode="decimal"
               min="0"
@@ -544,6 +711,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
          
           <div className="derive-preview derive-preview--editable">
             <EditCell
+              inputId="ae-cost"
               label="Cost"
               prefix="RM"
               value={cellValue("cost")}
@@ -551,6 +719,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
               active={primaryField === "cost"}
             />
             <EditCell
+              inputId="ae-liters"
               label="Liters"
               suffix="L"
               value={cellValue("liters")}
@@ -558,6 +727,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
               active={primaryField === "liters"}
             />
             <EditCell
+              inputId="ae-distance"
               label="Distance"
               suffix="km"
               value={cellValue("distance")}
@@ -565,6 +735,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
               active={primaryField === "distance"}
             />
             <EditCell
+              inputId="ae-efficiency"
               label="Fuel Efficiency"
               suffix="km/L"
               value={kmplInput}
@@ -599,6 +770,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
             <div className="field-inline" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
               <Field label="Tolls (RM)">
                 <input
+                  id="ae-tolls"
                   type="number"
                   inputMode="decimal"
                   min="0"
@@ -865,7 +1037,9 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
                   : undefined
               }
             >
-              <DatePicker value={date} onChange={setDate} />
+              <span id="ae-date" style={{ display: "block" }}>
+                <DatePicker value={date} onChange={setDate} />
+              </span>
             </Field>
             <Field label="Title (optional)">
               <input
@@ -876,6 +1050,19 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
               />
             </Field>
           </div>
+
+          <Field
+            label="Repeats"
+            hint={
+              recurrence !== "none"
+                ? `Auto-schedules the next ${isOwned ? "refuel" : "trip"} as upcoming; when it passes, the next one is scheduled.`
+                : `A one-off ${isOwned ? "refuel" : "trip"}. Pick a schedule to repeat it automatically.`
+            }
+          >
+            <span id="ae-recurrence" style={{ display: "block" }}>
+              <Select value={recurrence} onChange={setRecurrence} options={RECURRENCE_OPTIONS} />
+            </span>
+          </Field>
         </div>
       )}
     </Sheet>
@@ -884,7 +1071,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, onClose 
 
 /* An editable cell in the fuel card. `active` = this is the field currently
    driving the derivation; `accent` = it's a manually-set (measured) value. */
-function EditCell({ label, value, onChange, prefix, suffix, accent, active }) {
+function EditCell({ label, value, onChange, prefix, suffix, accent, active, inputId }) {
   return (
     <label
       className={
@@ -895,6 +1082,7 @@ function EditCell({ label, value, onChange, prefix, suffix, accent, active }) {
       <span className="edit-cell__box">
         {prefix && <span className="edit-cell__affix">{prefix}</span>}
         <input
+          id={inputId}
           type="number"
           inputMode="decimal"
           min="0"

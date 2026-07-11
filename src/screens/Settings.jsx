@@ -20,6 +20,7 @@ import { Segment, Field } from "../components/ui/Primitives.jsx";
 import { ScreenLoading } from "../components/ui/ScreenLoading.jsx";
 import { Select } from "../components/ui/Select.jsx";
 import { SPLIT_METHOD_OPTIONS, SPLIT_METHOD_HINTS } from "../lib/splitMethods.js";
+import { UPCOMING_WINDOW_OPTIONS } from "../lib/upcoming.js";
 import { CURRENCIES } from "../lib/currencies.js";
 import { DATE_FORMATS, formatDate } from "../lib/format.js";
 import { CyberCat } from "../components/brand/CyberCat.jsx";
@@ -39,9 +40,29 @@ import {
   Cloud,
   CloudOff,
   Loader2,
+  Bell,
+  Smartphone,
+  Fingerprint,
+  Palette,
+  SlidersHorizontal,
+  Database,
+  AlertTriangle,
+  Users,
+  Fuel,
+  ArrowLeft,
+  ChevronRight,
+  Moon,
+  Sun,
+  PawPrint,
 } from "../components/ui/Icons.jsx";
-import { syncNow, useSyncStatus } from "../lib/syncEngine.js";
-import { connect, disconnect, isConnected } from "../lib/drive.js";
+import { syncNow, useSyncStatus, connectAndPrepare, resolveConflict } from "../lib/syncEngine.js";
+import { disconnect, deleteRemoteFile } from "../lib/drive.js";
+import { isNative, isAndroidWeb } from "../lib/platform.js";
+import { ensureNotificationPermission, syncRefuelReminder } from "../lib/notifications.js";
+import { biometricAvailable, verifyBiometric } from "../lib/biometric.js";
+
+const ANDROID_APK_URL =
+  "https://github.com/zaiki505/CarPawl/releases/latest/download/CarPawl.apk";
 
 /* Settings: appearance, fuel/format prefs, default fuel price, the global people list, archived items with
    restore, JSON backup/restore, and the CyberCat easter egg. */
@@ -52,7 +73,7 @@ export function Settings() {
   const allGroups = useGroups({ includeArchived: true }) || [];
   const allEntries = useEntries() || [];
   const allPayments = usePayments() || [];
-  const { toast, askConfirm } = useApp();
+  const { toast, askConfirm, setBackHandler } = useApp();
 
   // Person IDs that appear anywhere in history (own a carpool, on an entry, or
   // in a payment). Used to label their action button "Archive" (kept for
@@ -74,9 +95,35 @@ export function Settings() {
   const [maint, setMaint] = useState(null);
   const [newPerson, setNewPerson] = useState("");
   const [showCat, setShowCat] = useState(false);
+  // Android-style two-level settings: null = category list, else the open category.
+  const [category, setCategory] = useState(null);
   const [driveConnecting, setDriveConnecting] = useState(false);
+  const [bioAvailable, setBioAvailable] = useState(false);
   const fileRef = useRef(null);
   const syncStatus = useSyncStatus();
+
+  // Whether this device can do biometric auth (gates the App Lock toggle).
+  useEffect(() => {
+    let alive = true;
+    biometricAvailable().then((ok) => alive && setBioAvailable(ok));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // While a settings category is open, hardware-back returns to the list instead
+  // of exiting the app (Android). Cleared when leaving Settings or the category.
+  useEffect(() => {
+    setBackHandler(
+      category
+        ? () => {
+            setCategory(null);
+            return true;
+          }
+        : null
+    );
+    return () => setBackHandler(null);
+  }, [category, setBackHandler]);
 
   // Seed the editable fields once from settings. Using null (not "") as the
   // "not seeded yet" marker means clearing the field back to empty sticks -
@@ -136,6 +183,38 @@ export function Settings() {
   async function saveDateFormat(fmt) {
     await updateSettings({ dateFormat: fmt });
     toast("Date format updated");
+  }
+
+  async function saveUpcomingWindow(win) {
+    await updateSettings({ upcomingWindow: win });
+    toast("Upcoming trips view updated");
+  }
+
+  async function toggleRefuelReminder(on) {
+    if (on) {
+      const granted = await ensureNotificationPermission();
+      if (!granted) {
+        toast("Allow notifications in system settings to get reminders.", "error");
+        return;
+      }
+    }
+    await updateSettings({ refuelReminder: on });
+    await syncRefuelReminder(on);
+    toast(on ? "Refuel reminders on" : "Refuel reminders off");
+  }
+
+  async function toggleAppLock(on) {
+    // Turning it ON requires one successful biometric check up front, so we
+    // never lock the user out with a sensor that doesn't actually work for them.
+    if (on) {
+      const ok = await verifyBiometric();
+      if (!ok) {
+        toast("Couldn't verify - app lock not enabled.", "error");
+        return;
+      }
+    }
+    await updateSettings({ appLock: on });
+    toast(on ? "App lock on" : "App lock off");
   }
 
   async function addNewPerson() {
@@ -280,13 +359,50 @@ export function Settings() {
   async function onConnectDrive() {
     setDriveConnecting(true);
     try {
-      await connect();
-      toast("Google Drive connected");
-      await syncNow({ allowInteractive: true });
+      const res = await connectAndPrepare();
+      if (res.status === "conflict") {
+        await handleDriveConflict(res);
+      } else {
+        toast("Google Drive connected & synced");
+      }
     } catch (e) {
       toast(e.message || "Could not connect to Google Drive", "error");
     } finally {
       setDriveConnecting(false);
+    }
+  }
+
+  // When this device AND Drive both already hold data, let the user choose how
+  // to combine them instead of silently merging. Replace is destructive, so it
+  // always needs a second explicit confirmation - an accidental dismiss can
+  // never wipe local data (it falls back to a safe merge).
+  async function handleDriveConflict(res) {
+    const describe = (c) =>
+      `${c.entries} refuel${c.entries === 1 ? "" : "s"}, ${c.people} ${c.people === 1 ? "person" : "people"}, ${c.groups} car${c.groups === 1 ? "" : "s"}`;
+    const merge = await askConfirm({
+      title: "Both places already have data",
+      body: `This device has ${describe(res.local)}. Google Drive has ${describe(res.remoteCounts)}. Merge keeps everything from both, or use Drive's copy and replace what's on this device.`,
+      confirmLabel: "Merge both",
+      cancelLabel: "Use Drive's copy",
+    });
+    if (merge) {
+      await resolveConflict("merge", res.remote, res.etag);
+      toast("Merged and synced");
+      return;
+    }
+    const ok = await askConfirm({
+      title: "Replace this device's data?",
+      body: `This deletes what's on this device (${describe(res.local)}) and uses Drive's copy (${describe(res.remoteCounts)}) instead. This can't be undone.`,
+      confirmLabel: "Replace with Drive's copy",
+      cancelLabel: "Keep both instead",
+      danger: true,
+    });
+    if (ok) {
+      await resolveConflict("replace", res.remote, res.etag);
+      toast("This device now matches Google Drive");
+    } else {
+      await resolveConflict("merge", res.remote, res.etag);
+      toast("Merged and synced");
     }
   }
 
@@ -314,10 +430,27 @@ export function Settings() {
     }
   }
 
+  async function onDeleteDriveBackup() {
+    const ok = await askConfirm({
+      title: "Delete backup from Google Drive?",
+      body: "This permanently removes the CarPawl backup stored in your Google Drive, and disconnects this device so it won't just re-upload. Your data on THIS device is not touched.",
+      confirmLabel: "Delete backup & disconnect",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteRemoteFile({ allowInteractive: true });
+      await disconnect();
+      toast("Drive backup deleted");
+    } catch (e) {
+      toast(e.message || "Could not delete the Drive backup", "error");
+    }
+  }
+
   async function onExport() {
     try {
-      await exportToFile();
-      toast("Backup downloaded 💾");
+      const { delivered } = await exportToFile();
+      toast(delivered === "shared" ? "Backup ready to save/send 💾" : "Backup downloaded 💾");
     } catch (e) {
       toast(e.message, "error");
     }
@@ -350,36 +483,155 @@ export function Settings() {
     }
   }
 
+  // Android-style settings: a list of categories, then a detail page per one.
+  // Native-only categories are hidden off-device via `show`.
+  const CATEGORIES = [
+    { key: "appearance", label: "Appearance", hint: "Theme", icon: <Palette size={20} /> },
+    { key: "fuel", label: "Fuel & format", hint: "Default fuel price, currency, date format", icon: <Fuel size={20} /> },
+    { key: "splitting", label: "Carpool splitting", hint: "Default split method and markup", icon: <SlidersHorizontal size={20} /> },
+    { key: "reminders", label: "Reminders", hint: "Refuel nudges", icon: <Bell size={20} />, show: isNative() },
+    { key: "privacy", label: "Privacy", hint: "Biometric app lock", icon: <Fingerprint size={20} />, show: isNative() && bioAvailable },
+    { key: "people", label: "People", hint: "Passengers and archived items", icon: <Users size={20} /> },
+    { key: "sync", label: "Google Drive sync", hint: "Sync across your devices", icon: <Cloud size={20} /> },
+    { key: "backup", label: "Backup & restore", hint: "Export or restore a JSON file", icon: <Database size={20} /> },
+    { key: "danger", label: "Danger zone", hint: "Permanent deletes and full reset", icon: <AlertTriangle size={20} />, danger: true },
+  ];
+  const activeCat = CATEGORIES.find((c) => c.key === category);
+
+  // At-a-glance badge on the Drive sync row: flag it when disconnected or the
+  // last sync errored, so the user notices without opening the category.
+  const driveConnected = Boolean(settings?.gdriveConnected);
+  const driveError = syncStatus?.state === "error";
+  const driveNeedsAttention = !driveConnected || driveError;
+
   return (
     <div className="app-shell stagger">
-      <header className="screen-head">
-        <div>
-          <p className="screen-head__kicker">Preferences & data</p>
-          <h1 className="screen-head__title">Settings</h1>
-        </div>
-      </header>
+      {/* Header: category list, or a detail page with a back button. */}
+      {category === null ? (
+        <header className="screen-head">
+          <div className="head-morph" key="root">
+            <p className="screen-head__kicker">Preferences & data</p>
+            <h1 className="screen-head__title">Settings</h1>
+          </div>
+        </header>
+      ) : (
+        <header className="screen-head settings-detail-head">
+          <button
+            className="icon-btn settings-back"
+            type="button"
+            onClick={() => setCategory(null)}
+            aria-label="Back to settings"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <div className="head-morph" key={category}>
+            <p className="screen-head__kicker">Settings</p>
+            <h1 className="screen-head__title">{activeCat?.label}</h1>
+          </div>
+        </header>
+      )}
 
+      {/* ---------- Category list ---------- */}
+      {category === null && (
+        <>
+          {/* Get the Android app - only in an Android web browser. */}
+          {isAndroidWeb() && (
+            <section className="section-block">
+              <div className="detail-panel">
+                <div className="get-app-row">
+                  <Smartphone size={20} style={{ flexShrink: 0 }} />
+                  <div style={{ minWidth: 0 }}>
+                    <p className="get-app-row__title">Get the CarPawl app</p>
+                    <p className="field-hint" style={{ margin: 0 }}>
+                      Install the Android app for durable storage and native features.
+                    </p>
+                  </div>
+                </div>
+                <a className="cta-primary btn-block" href={ANDROID_APK_URL} style={{ marginTop: "0.7rem" }}>
+                  <Download size={16} /> Download Android app
+                </a>
+                <p className="field-hint" style={{ marginTop: "0.5rem", fontSize: "0.66rem" }}>
+                  Android may warn about installing outside the Play Store, that's
+                  expected for a direct download outside the store.
+                </p>
+              </div>
+            </section>
+          )}
+
+          <nav className="settings-cats">
+            {CATEGORIES.filter((c) => c.show !== false).map((c) => (
+              <button
+                key={c.key}
+                className="settings-cat-row"
+                type="button"
+                onClick={() => setCategory(c.key)}
+              >
+                <span className={"settings-cat-row__icon" + (c.danger ? " is-danger" : "")}>
+                  {c.icon}
+                </span>
+                <span className="settings-cat-row__text">
+                  <span className="settings-cat-row__label">{c.label}</span>
+                  <span className="settings-cat-row__hint">{c.hint}</span>
+                </span>
+                {c.key === "sync" && driveNeedsAttention && (
+                  <span
+                    className={"settings-cat-status" + (driveError ? " is-error" : "")}
+                    title={driveError ? "Sync error - open to review" : "Not connected"}
+                  >
+                    <CloudOff size={15} />
+                  </span>
+                )}
+                <ChevronRight size={18} className="settings-cat-row__chev" />
+              </button>
+            ))}
+          </nav>
+        </>
+      )}
+
+      {/* ---------- Category detail (CSS shows only the active category) ---------- */}
+      {category !== null && (
+      <div className="settings-detail" data-active={category}>
       {/* Appearance */}
-      <section className="section-block">
+      <section className="section-block" data-cat="appearance">
         <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
           Appearance
         </h2>
-        <div className="detail-panel">
+        <div className="detail-panel field-grid">
           <Field label="Theme">
             <Segment
               value={theme}
               onChange={onTheme}
               options={[
-                { value: "dark", label: "🌙 Dark" },
-                { value: "light", label: "☀️ Light" },
+                { value: "dark", label: <span className="seg-ico"><Moon size={14} /> Dark</span> },
+                { value: "light", label: <span className="seg-ico"><Sun size={14} /> Light</span> },
               ]}
             />
           </Field>
+          <Field
+            label="Show upcoming trips"
+            hint="Trips scheduled further ahead than this are tucked behind a 'show more' in your lists. They still count once their date arrives."
+          >
+            <Select
+              value={settings.upcomingWindow || "1mo"}
+              onChange={saveUpcomingWindow}
+              options={UPCOMING_WINDOW_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            />
+          </Field>
+        </div>
+        {/* Fill the empty space with the mascot: its pupils dilate in the dark
+            and constrict in the light, and it reacts to any button tap. */}
+        <div className="appearance-cat">
+          <CyberCat
+            size={190}
+            theme={theme}
+            reactOnAnyClick
+            hint={theme === "dark" ? "Eyes wide in the dark" : "Squinting in the light"}
+          />
         </div>
       </section>
 
       {/* Fuel & formats */}
-      <section className="section-block">
+      <section className="section-block" data-cat="fuel">
         <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
           Fuel & formats
         </h2>
@@ -402,7 +654,7 @@ export function Settings() {
               </button>
             </div>
           </Field>
-          <div className="field-inline">
+          <div className="field-inline field-pair-responsive">
             <Field label="Currency">
               <Select
                 value={settings.currency || "MYR"}
@@ -430,7 +682,7 @@ export function Settings() {
       </section>
 
       {/* Splitting */}
-      <section className="section-block">
+      <section className="section-block" data-cat="splitting">
         <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
           Carpool splitting
         </h2>
@@ -466,8 +718,65 @@ export function Settings() {
         </div>
       </section>
 
+      {/* Reminders (native only - local notifications aren't meaningful in a
+          browser tab, so the section is hidden off-device). */}
+      {isNative() && (
+        <section className="section-block" data-cat="reminders">
+          <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
+            Reminders
+          </h2>
+          <div className="detail-panel">
+            <Field
+              label={
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+                  <Bell size={14} /> Refuel reminder
+                </span>
+              }
+              hint="A gentle nudge if you haven't logged a refuel in about 10 days. Only fires when you've gone quiet - staying active pushes it back automatically."
+            >
+              <Segment
+                value={settings.refuelReminder ? "on" : "off"}
+                onChange={(v) => toggleRefuelReminder(v === "on")}
+                options={[
+                  { value: "on", label: "On" },
+                  { value: "off", label: "Off" },
+                ]}
+              />
+            </Field>
+          </div>
+        </section>
+      )}
+
+      {/* Privacy - biometric app lock (native + a sensor is enrolled). */}
+      {isNative() && bioAvailable && (
+        <section className="section-block" data-cat="privacy">
+          <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
+            Privacy
+          </h2>
+          <div className="detail-panel">
+            <Field
+              label={
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+                  <Fingerprint size={14} /> App lock
+                </span>
+              }
+              hint="Require your fingerprint or face to open CarPawl - on launch and each time you return to it."
+            >
+              <Segment
+                value={settings.appLock ? "on" : "off"}
+                onChange={(v) => toggleAppLock(v === "on")}
+                options={[
+                  { value: "on", label: "On" },
+                  { value: "off", label: "Off" },
+                ]}
+              />
+            </Field>
+          </div>
+        </section>
+      )}
+
       {/* People */}
-      <section className="section-block">
+      <section className="section-block" data-cat="people">
         <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
           People
         </h2>
@@ -521,9 +830,9 @@ export function Settings() {
         </div>
       </section>
 
-      {/* Archived */}
-      <section className="section-block">
-        <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
+      {/* Archived (part of the People category) */}
+      <section className="section-block" data-cat="people">
+        <h2 className="section-block__title settings-keep-head" style={{ marginBottom: "0.6rem" }}>
           Archived
         </h2>
         {archivedGroups.length === 0 && archivedPeople.length === 0 ? (
@@ -599,7 +908,7 @@ export function Settings() {
       </section>
 
       {/* Google Drive sync */}
-      <section className="section-block">
+      <section className="section-block" data-cat="sync">
         <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
           Google Drive sync
         </h2>
@@ -611,12 +920,13 @@ export function Settings() {
             onConnect={onConnectDrive}
             onDisconnect={onDisconnectDrive}
             onSyncNow={onSyncNow}
+            onDeleteBackup={onDeleteDriveBackup}
           />
         </div>
       </section>
 
       {/* Backup & restore */}
-      <section className="section-block">
+      <section className="section-block" data-cat="backup">
         <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
           Backup &amp; restore
         </h2>
@@ -651,7 +961,7 @@ export function Settings() {
       </section>
 
       {/* Danger zone: permanent deletes + wipe everything */}
-      <section className="section-block">
+      <section className="section-block" data-cat="danger">
         <h2 className="section-block__title" style={{ marginBottom: "0.6rem", color: "#ff6b81" }}>
           Danger zone
         </h2>
@@ -714,26 +1024,30 @@ export function Settings() {
           </button>
         </div>
       </section>
-
-      {/* Easter egg: tap the wordmark to summon the Cyber Cat */}
-      <div className="settings-footer">
-        <button
-          className="wordmark-btn"
-          type="button"
-          onClick={() => setShowCat((s) => !s)}
-          aria-label="CarPawl"
-        >
-          CarPawl 🐾
-        </button>
-        {showCat && (
-          <div className="cat-egg">
-            <CyberCat size={110} hint="you found me!" />
-          </div>
-        )}
-        <p className="faint" style={{ fontSize: "0.68rem" }}>
-          v0.2.0 · Made by Zaiki
-        </p>
       </div>
+      )}
+
+      {/* Easter egg + version - only on the category list. */}
+      {category === null && (
+        <div className="settings-footer">
+          <button
+            className="wordmark-btn"
+            type="button"
+            onClick={() => setShowCat((s) => !s)}
+            aria-label="CarPawl"
+          >
+            CarPawl <PawPrint size={14} />
+          </button>
+          {showCat && (
+            <div className="cat-egg">
+              <CyberCat size={110} theme={theme} reactOnAnyClick hint="you found me!" />
+            </div>
+          )}
+          <p className="faint" style={{ fontSize: "0.68rem" }}>
+            v0.2.5 · Made by Zaiki
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -835,19 +1149,14 @@ function relativeTime(isoStr) {
  * Google Drive sync status panel
  * Shows: connection status, connect/disconnect/sync-now buttons, last-synced time, errors.
  */
-function DriveStatus({ syncStatus, settings, connecting, onConnect, onDisconnect, onSyncNow }) {
+function DriveStatus({ syncStatus, settings, connecting, onConnect, onDisconnect, onSyncNow, onDeleteBackup }) {
   const connected = Boolean(settings?.gdriveConnected);
   const email = settings?.gdriveUserEmail || null;
   const isSyncing = syncStatus?.state === "syncing" || connecting;
   const lastSynced = relativeTime(syncStatus?.lastSyncedAt || settings?.lastSyncedAt);
   const hasError = syncStatus?.state === "error" && syncStatus?.error;
-
-  // Determine status variant for the mini-btn color
-  const statusVariant = hasError
-    ? "mini-btn--error"
-    : isSyncing
-      ? "mini-btn--syncing"
-      : "mini-btn--connected";
+  // A cached file id means a backup exists in Drive (set after the first sync).
+  const hasDriveBackup = Boolean(settings?.gdriveFileId);
 
   if (!connected) {
     return (
@@ -862,7 +1171,7 @@ function DriveStatus({ syncStatus, settings, connecting, onConnect, onDisconnect
         </p>
         <div className="btn-row btn-row--center" style={{ gap: "0.6rem", flexDirection: "column", alignItems: "center" }}>
           <button
-            className="cta-primary"
+            className="cta-primary btn-block"
             type="button"
             onClick={onConnect}
             disabled={connecting}
@@ -879,15 +1188,17 @@ function DriveStatus({ syncStatus, settings, connecting, onConnect, onDisconnect
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+    <div className="drive-panel" style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
       {/* Status row */}
       <div className="drive-status-row field-hint">
-        <Cloud size={15} style={{ flexShrink: 0, color: hasError ? "var(--color-error, #ff6b81)" : "var(--color-success, #4caf50)" }} />
-        <span>
-          Connected{email ? ` as ${email}` : ""}
+        <span className="drive-status-row__info">
+          <Cloud size={15} style={{ flexShrink: 0, color: hasError ? "var(--color-error, #ff6b81)" : "var(--color-success, #4caf50)" }} />
+          <span className="drive-status-text" title={email ? `Connected as ${email}` : "Connected"}>
+            Connected{email ? ` as ${email}` : ""}
+          </span>
         </span>
         <button
-          className={`mini-btn drive-mini-btn ${statusVariant}`}
+          className="mini-btn drive-mini-btn mini-btn--danger"
           type="button"
           onClick={onDisconnect}
           disabled={isSyncing}
@@ -914,7 +1225,7 @@ function DriveStatus({ syncStatus, settings, connecting, onConnect, onDisconnect
       {/* Action buttons */}
       <div className="btn-row btn-row--center" style={{ gap: "0.6rem", flexDirection: "column", alignItems: "center" }}>
         <button
-          className="cta-secondary"
+          className="cta-secondary btn-block"
           type="button"
           onClick={onSyncNow}
           disabled={isSyncing}
@@ -925,6 +1236,16 @@ function DriveStatus({ syncStatus, settings, connecting, onConnect, onDisconnect
           ) : (
             <><RefreshCw size={14} /> Sync now</>
           )}
+        </button>
+
+        <button
+          className="cta-secondary btn-danger btn-block"
+          type="button"
+          onClick={onDeleteBackup}
+          disabled={isSyncing || !hasDriveBackup}
+          title={hasDriveBackup ? "Delete the backup stored in Google Drive" : "No backup in Google Drive yet"}
+        >
+          <Trash2 size={14} /> Delete Drive backup
         </button>
       </div>
     </div>

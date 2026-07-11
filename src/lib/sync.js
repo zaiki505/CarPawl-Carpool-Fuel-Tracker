@@ -16,7 +16,7 @@
 export const SYNC_VERSION = 1;
 
 // Tables merged record-by-record. `settings` is merged as a single row below.
-export const SYNC_TABLES = ["people", "groups", "entries", "payments"];
+export const SYNC_TABLES = ["people", "groups", "entries", "payments", "creditApplications"];
 
 const ms = (iso) => (iso ? Date.parse(iso) || 0 : 0);
 const tsOf = (rec) => ms(rec?.updatedAt);

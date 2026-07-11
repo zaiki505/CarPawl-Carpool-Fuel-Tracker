@@ -8,6 +8,7 @@ import {
   thisMonthConsumption,
 } from "../lib/calc.js";
 import { formatMoney, formatMoneyShort, formatLiters, monthLabel } from "../lib/format.js";
+import { partitionUpcoming, upcomingWindowDays } from "../lib/upcoming.js";
 import { personName } from "../lib/names.js";
 import { StatCard, SectionHead, EmptyState } from "../components/ui/Primitives.jsx";
 import { ScreenLoading } from "../components/ui/ScreenLoading.jsx";
@@ -15,6 +16,7 @@ import { GroupCard } from "../components/GroupCard.jsx";
 import { EntryCard } from "../components/EntryCard.jsx";
 import { FuelSpendCard } from "../components/FuelSpendCard.jsx";
 import { ChartCarousel } from "../components/LazyChartCarousel.jsx";
+import { DriveReauthBanner } from "../components/DriveReauthBanner.jsx";
 import { Wallet, CircleDollarSign, Fuel, Gauge } from "../components/ui/Icons.jsx";
 
 export function Dashboard() {
@@ -42,10 +44,14 @@ export function Dashboard() {
   const activeGroupIds = new Set(data.activeGroups.map((g) => g.id));
   const spendEntries = entries.filter((e) => activeGroupIds.has(e.groupId));
 
-  const recent = entries.slice(0, 4);
+  // Hide far-future upcoming trips from the preview per the Appearance window
+  // (they still live in History, which has the staged "show more").
+  const recent = partitionUpcoming(entries, upcomingWindowDays(data.settings?.upcomingWindow))
+    .visible.slice(0, 4);
 
   return (
     <div className="app-shell stagger">
+      <DriveReauthBanner />
       <header className="screen-head">
         <div>
           <p className="screen-head__kicker">{monthLabel()}</p>
@@ -167,6 +173,8 @@ export function Dashboard() {
               ownedByMe={data.groupOwnedMap.get(e.groupId)}
               ownerName={personName(data.groupMap.get(e.groupId)?.ownerPersonId, peopleMap)}
               fallbackTitle={data.groupMap.get(e.groupId)?.name}
+              applications={data.creditApplications}
+              onReverseCredit={entryActions.onReverseCredit}
               onRecordPayment={entryActions.onRecordPayment}
               onEditPayment={entryActions.onEditPayment}
               onDeletePayment={entryActions.onDeletePayment}

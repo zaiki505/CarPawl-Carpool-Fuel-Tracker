@@ -1,5 +1,11 @@
 import { useApp } from "./AppContext.jsx";
-import { removeEntry, removePayment, createPayment, clearPayments } from "../db/actions.js";
+import {
+  removeEntry,
+  removePayment,
+  createPayment,
+  clearPayments,
+  reverseCreditApplication,
+} from "../db/actions.js";
 import { formatMoney, todayISODate } from "../lib/format.js";
 import { confettiBurst } from "../lib/confetti.js";
 import { haptic } from "../lib/haptics.js";
@@ -53,7 +59,21 @@ export function useEntryActions() {
     toast("Payments cleared");
   };
 
-  const onEditEntry = (entry) => openSheet({ type: "addEntry", entryId: entry.id });
+  const onEditEntry = (entry, focusField) =>
+    openSheet({ type: "addEntry", entryId: entry.id, focusField });
+
+  // Undo a credit application shown inside an entry card (soft-reverse: restores
+  // the credit and the debt, keeps an audit row).
+  const onReverseCredit = async (app) => {
+    const ok = await askConfirm({
+      title: "Undo this credit application?",
+      body: `Restores ${formatMoney(app.amount)} to the credit balance and puts that much back onto this debt. It stays in history, marked reversed.`,
+      confirmLabel: "Undo",
+    });
+    if (!ok) return;
+    await reverseCreditApplication(app.id);
+    toast("Credit application reversed");
+  };
 
   // Duplicate: open a fresh Add sheet pre-filled from this entry (today's date,
   // no payments carried over).
@@ -83,5 +103,6 @@ export function useEntryActions() {
     onEditEntry,
     onDuplicateEntry,
     onDeleteEntry,
+    onReverseCredit,
   };
 }

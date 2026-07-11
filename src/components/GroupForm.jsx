@@ -6,7 +6,7 @@ import { useApp } from "../app/AppContext.jsx";
 import { Field, Segment, NumberInput } from "./ui/Primitives.jsx";
 import { SPLIT_METHOD_OPTIONS, SPLIT_METHOD_HINTS } from "../lib/splitMethods.js";
 import { haptic } from "../lib/haptics.js";
-import { Plus, Check, Car, User } from "./ui/Icons.jsx";
+import { Plus, Check, Car, User, PawPrint } from "./ui/Icons.jsx";
 
 /* Group creation form. Two modes:
    - 'onboard'  first-run: ownerType is 'me', the ownership question is skipped
@@ -205,7 +205,13 @@ export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false,
       )}
 
       <button className="cta-primary btn-block" type="button" onClick={save} disabled={busy}>
-        {mode === "onboard" ? "Start tracking 🐾" : "Add car"}
+        {mode === "onboard" ? (
+          <>
+            Start tracking <PawPrint size={16} />
+          </>
+        ) : (
+          "Add car"
+        )}
       </button>
     </div>
   );

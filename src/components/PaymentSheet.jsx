@@ -4,21 +4,42 @@ import { Field, MoneyInput } from "./ui/Primitives.jsx";
 import { DatePicker } from "./ui/DatePicker.jsx";
 import { createPayment, updatePayment, removePayment } from "../db/actions.js";
 import { useApp } from "../app/AppContext.jsx";
-import { usePaymentsForEntry, useEntry } from "../db/hooks.js";
-import { outstanding } from "../lib/calc.js";
-import { formatMoney, formatMoneyShort, todayISODate } from "../lib/format.js";
+import {
+  usePaymentsForEntry,
+  useEntry,
+  useEntriesForGroup,
+  usePayments,
+  useCreditApplicationsForGroup,
+  useGroup,
+} from "../db/hooks.js";
+import { outstanding, availableCredit, outstandingDebtsFor } from "../lib/calc.js";
+import { ME, person as mkPerson } from "../lib/identity.js";
+import { formatMoney, formatMoneyShort, todayISODate, isFutureDate } from "../lib/format.js";
 import { whoName } from "../lib/names.js";
 import { confettiBurst } from "../lib/confetti.js";
-import { Trash2 } from "./ui/Icons.jsx";
+import { Trash2, Wallet } from "./ui/Icons.jsx";
 
 /* Record OR edit a payment against a specific entry + passenger.
    Overpayment is allowed - we never cap the amount at the remaining outstanding.
    When `payment` is passed, the sheet edits (and can delete) that payment. */
 export function PaymentSheet({ entry, who, payment, peopleMap, ownedByMe, onClose }) {
   const editing = Boolean(payment);
-  const { toast, askConfirm } = useApp();
+  const { toast, askConfirm, openSheet } = useApp();
   const entryPaymentsRaw = usePaymentsForEntry(entry.id);
   const entryPayments = entryPaymentsRaw || [];
+
+  // Credit offset: if this passenger holds unapplied credit from the owner AND
+  // still owes them elsewhere, offer to apply it right here (rule 2 entry point).
+  const groupEntries = useEntriesForGroup(entry.groupId) || [];
+  const allPayments = usePayments() || [];
+  const groupApps = useCreditApplicationsForGroup(entry.groupId) || [];
+  const group = useGroup(entry.groupId);
+  const creditorWho = ownedByMe ? ME : group?.ownerPersonId ? mkPerson(group.ownerPersonId) : null;
+  const availCredit = availableCredit(groupEntries, who, allPayments, groupApps);
+  const canApplyCredit =
+    availCredit > 0.005 &&
+    Boolean(creditorWho) &&
+    outstandingDebtsFor(groupEntries, who, allPayments, groupApps).length > 0;
   // Re-read the entry live rather than trusting the snapshot the caller
   // opened this sheet with - if it was edited (e.g. from another tab) while
   // this sheet is open, outstanding() should reflect the current shares, not
@@ -96,11 +117,17 @@ export function PaymentSheet({ entry, who, payment, peopleMap, ownedByMe, onClos
   }
 
   const name = whoName(who, peopleMap);
+  const isUpcoming = isFutureDate(liveEntry.date);
 
   return (
     <Sheet
       title={editing ? "Edit payment" : "Record payment"}
       onClose={onClose}
+      banner={
+        isUpcoming
+          ? `This ${ownedByMe ? "refuel" : "trip"} is upcoming - the payment is saved now as a prepayment and starts counting toward balances once its date arrives.`
+          : undefined
+      }
       footer={
         <>
           <button className="cta-secondary" type="button" onClick={onClose}>
@@ -144,6 +171,23 @@ export function PaymentSheet({ entry, who, payment, peopleMap, ownedByMe, onClos
             )}
           </div>
         </div>
+
+        {canApplyCredit && (
+          <button
+            type="button"
+            className="apply-credit-btn"
+            onClick={() =>
+              openSheet({
+                type: "applyCredit",
+                groupId: entry.groupId,
+                debtorWho: who,
+                creditorWho,
+              })
+            }
+          >
+            <Wallet size={13} /> Apply {formatMoneyShort(availCredit)} credit instead
+          </button>
+        )}
 
         <Field label="Amount">
           <MoneyInput value={amount} onChange={setAmount} />

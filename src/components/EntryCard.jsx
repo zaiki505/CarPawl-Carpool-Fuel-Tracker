@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
+import { useAppOptional } from "../app/AppContext.jsx";
 import {
   entryShares,
   outstanding,
@@ -6,6 +7,7 @@ import {
   paymentsFor,
   entryEfficiencyDisplay,
   splitMethodOf,
+  appliedCreditTo,
 } from "../lib/calc.js";
 import {
   formatMoney,
@@ -20,9 +22,10 @@ import {
 import { whoName } from "../lib/names.js";
 import { whoKey, whoEquals, isMe } from "../lib/identity.js";
 import { splitMethodShort } from "../lib/splitMethods.js";
+import { recurrenceLabel } from "../lib/recurrence.js";
 import { StatusBadge } from "./ui/Primitives.jsx";
 import { SwipeSettle } from "./ui/SwipeSettle.jsx";
-import { Fuel, ChevronDown, Pencil, Copy, Trash2, Wallet } from "./ui/Icons.jsx";
+import { Fuel, ChevronDown, Pencil, Copy, Trash2, Wallet, Repeat, Undo2 } from "./ui/Icons.jsx";
 
 // Roll-up status: text colour for the collected figure in the collapsed row.
 const STATUS_COLOR = {
@@ -52,6 +55,8 @@ export function EntryCard({
   onEdit,
   onDuplicate,
   onDelete,
+  applications = [],
+  onReverseCredit,
   defaultExpanded = false,
 }) {
   const [open, setOpen] = useState(defaultExpanded);
@@ -59,6 +64,52 @@ export function EntryCard({
   // Per-passenger so one rider's "+N more" doesn't expand everyone's list.
   const [expandedPay, setExpandedPay] = useState({});
   const [dissolving, setDissolving] = useState(null); // whoKey mid-dissolve
+
+  // Multi-select: long-press (touch) or right-click (desktop) selects this card
+  // and enters selection mode; in that mode a tap toggles selection.
+  const app = useAppOptional();
+  const selectionMode = app?.selectionMode || false;
+  const selectEntry = app?.selectEntry || (() => {});
+  const toggleSelectEntry = app?.toggleSelectEntry || (() => {});
+  const selected = app?.selectedEntries ? app.selectedEntries.has(entry.id) : false;
+  const lpTimer = useRef(null);
+  const lpFired = useRef(false);
+  const lpStart = useRef(null);
+
+  function onHeadPointerDown(e) {
+    if (e.pointerType === "mouse" && e.button !== 0) return; // right/middle -> contextmenu
+    lpFired.current = false;
+    lpStart.current = { x: e.clientX, y: e.clientY };
+    clearTimeout(lpTimer.current);
+    lpTimer.current = setTimeout(() => {
+      lpFired.current = true;
+      selectEntry(entry);
+    }, 500);
+  }
+  function onHeadPointerMove(e) {
+    if (!lpStart.current) return;
+    if (Math.abs(e.clientX - lpStart.current.x) > 10 || Math.abs(e.clientY - lpStart.current.y) > 10) {
+      clearTimeout(lpTimer.current);
+    }
+  }
+  function cancelLongPress() {
+    clearTimeout(lpTimer.current);
+  }
+  function onHeadClick() {
+    if (lpFired.current) {
+      lpFired.current = false;
+      return; // the long-press already selected; don't also expand
+    }
+    if (selectionMode) {
+      toggleSelectEntry(entry);
+      return;
+    }
+    setOpen((o) => !o);
+  }
+  function onCardContextMenu(e) {
+    e.preventDefault();
+    selectEntry(entry);
+  }
 
   // The entry's cent-rounded shares, computed once and indexed by whoKey, so
   // the per-passenger renders below don't each re-derive the whole entry.
@@ -80,12 +131,30 @@ export function EntryCard({
     }, 560);
   }
   const entryPayments = (payments || []).filter((p) => p.entryId === entry.id);
+  // Credit applied to this entry offsets debts on it (rule 8: a debt settled by
+  // credit reads exactly like a paid one).
+  const entryApps = (applications || []).filter((a) => a.targetEntryId === entry.id);
+  const activeEntryApps = entryApps.filter((a) => !a.reversedAt);
   const allPassengers = entry.passengers || [];
   const method = splitMethodOf(entry);
   const effDisp = entryEfficiencyDisplay(entry);
   // A future-dated refuel is "upcoming" - not yet counted in any balance or
   // spend total (see calc.balanceForWho / fuelSpend), just shown as scheduled.
   const upcoming = isFutureDate(entry.date);
+  const recurLabel = recurrenceLabel(entry.recurrence);
+
+  // Tap a detail/chip to jump straight into the editor with that field focused
+  // (#6). No-op (falls through to the row toggle) when this card isn't editable.
+  const tapEdit = (field) => (e) => {
+    if (selectionMode) {
+      e.stopPropagation();
+      toggleSelectEntry(entry);
+      return;
+    }
+    if (!onEdit) return;
+    e.stopPropagation();
+    onEdit(entry, field);
+  };
 
   // Passengers we actually show/count (the History filter applied). In your own
   // vehicle your "Me" share is billed and already covered - it counts toward
@@ -109,7 +178,7 @@ export function EntryCard({
   // roll-up status across the collectible (non-Me) passengers
   let rollup = null;
   if (otherPax.length) {
-    const statuses = otherPax.map((p) => statusOf(entry, p.who, entryPayments));
+    const statuses = otherPax.map((p) => statusOf(entry, p.who, entryPayments, entryApps));
     if (statuses.every((s) => s === "paid")) rollup = "paid";
     else if (statuses.some((s) => s === "credit")) rollup = "credit";
     else if (statuses.some((s) => s === "partial" || s === "paid")) rollup = "partial";
@@ -124,11 +193,24 @@ export function EntryCard({
       : null;
 
   return (
-    <div className={"entry-card" + (upcoming ? " entry-card--upcoming" : "")}>
+    <div
+      className={
+        "entry-card" +
+        (upcoming ? " entry-card--upcoming" : "") +
+        (selectionMode ? " entry-card--selectable" : "") +
+        (selected ? " entry-card--selected" : "")
+      }
+      onContextMenu={onCardContextMenu}
+    >
       <button
         className="entry-card__head"
         data-no-pop
-        onClick={() => setOpen((o) => !o)}
+        onClick={onHeadClick}
+        onPointerDown={onHeadPointerDown}
+        onPointerMove={onHeadPointerMove}
+        onPointerUp={cancelLongPress}
+        onPointerLeave={cancelLongPress}
+        onPointerCancel={cancelLongPress}
         type="button"
         aria-expanded={open}
       >
@@ -150,12 +232,30 @@ export function EntryCard({
             </span>
             <span
               className={
-                "owner-chip " + (ownedByMe ? "owner-chip--mine" : "owner-chip--other")
+                "owner-chip " +
+                (ownedByMe ? "owner-chip--mine" : "owner-chip--other") +
+                (onEdit ? " is-tappable" : "")
               }
+              onClick={tapEdit("vehicle")}
             >
               {ownedByMe ? "You" : ownerName || "Someone"}
             </span>
-            {upcoming && <span className="upcoming-pill">Upcoming</span>}
+            {upcoming && (
+              <span
+                className={"upcoming-pill" + (onEdit ? " is-tappable" : "")}
+                onClick={tapEdit("date")}
+              >
+                Upcoming
+              </span>
+            )}
+            {recurLabel && (
+              <span
+                className={"recur-pill" + (onEdit ? " is-tappable" : "")}
+                onClick={tapEdit("recurrence")}
+              >
+                <Repeat size={11} /> {recurLabel}
+              </span>
+            )}
           </div>
         </div>
         <div className="list-row__trailing">
@@ -179,23 +279,49 @@ export function EntryCard({
 
       {open && (
         <div className="entry-card__body">
-          <div className="entry-facts">
-            <Fact label="Distance" value={formatKm(entry.totalDistance)} />
-            <Fact label="Liters" value={formatLiters(entry.totalLiters)} />
-            <Fact label="Fuel price" value={`${formatMoneyShort(entry.fuelPricePerLiter)}/L`} />
+          <div
+            className={"entry-facts" + (onEdit || selectionMode ? " entry-facts--tappable" : "")}
+            onClick={
+              selectionMode
+                ? () => toggleSelectEntry(entry)
+                : onEdit
+                ? () => onEdit(entry, "cost")
+                : undefined
+            }
+          >
+            <Fact
+              label="Distance"
+              value={formatKm(entry.totalDistance)}
+              onTap={onEdit ? tapEdit("distance") : undefined}
+            />
+            <Fact
+              label="Liters"
+              value={formatLiters(entry.totalLiters)}
+              onTap={onEdit ? tapEdit("liters") : undefined}
+            />
+            <Fact
+              label="Fuel price"
+              value={`${formatMoneyShort(entry.fuelPricePerLiter)}/L`}
+              onTap={onEdit ? tapEdit("fuelPrice") : undefined}
+            />
             <Fact
               label="Efficiency"
               value={effText || "-"}
               hint={effDisp.estimated ? "estimate" : "measured"}
+              onTap={onEdit ? tapEdit("efficiency") : undefined}
             />
           </div>
 
           {hasPax && method === "driver_comp" && (
             <div className="split-chip-row">
-              <span className="chip-fact">
+              <button
+                type="button"
+                className={"chip-fact" + (onEdit || selectionMode ? " chip-fact--tappable" : "")}
+                onClick={onEdit || selectionMode ? tapEdit("tolls") : undefined}
+              >
                 Tolls {formatMoneyShort(entry.tolls || 0)} · Parking{" "}
                 {formatMoneyShort(entry.parking || 0)} · +{entry.maintenancePct || 0}%
-              </span>
+              </button>
             </div>
           )}
 
@@ -225,17 +351,19 @@ export function EntryCard({
                   );
                 }
                 const paid = paymentsFor(entry, p.who, entryPayments);
-                const out = outstanding(entry, p.who, entryPayments);
-                const status = statusOf(entry, p.who, entryPayments);
+                const out = outstanding(entry, p.who, entryPayments, entryApps);
+                const status = statusOf(entry, p.who, entryPayments, entryApps);
+                const creditApplied = appliedCreditTo(entry.id, p.who, entryApps);
                 const theirPayments = entryPayments.filter((pm) =>
                   whoEquals(pm.who, p.who)
                 );
                 const showThisPay = !!expandedPay[whoKey(p.who)];
                 const visiblePay = showThisPay ? theirPayments : theirPayments.slice(0, 2);
-                // Upcoming (future-dated) refuels aren't in effect yet - it
-                // shares don't count toward balances (see calc.balanceForWho).
-                // Clearing an already-recorded payment stays available.
-                const canSettle = onQuickSettle && out > 0.005 && !upcoming;
+                // Upcoming (future-dated) refuels accept payments IN ADVANCE.
+                // Those payments (and the refuel's shares) stay out of the live
+                // balances until the refuel date arrives, then net out - see
+                // calc.balanceForWho, which skips future entries wholesale.
+                const canSettle = onQuickSettle && out > 0.005;
                 const canClear = onClearPayments && theirPayments.length > 0;
                 const payIds = theirPayments.map((pm) => pm.id);
                 const rowEl = (
@@ -249,6 +377,7 @@ export function EntryCard({
                             : ""}
                           share {formatMoney(s)}
                           {paid > 0 ? ` · paid ${formatMoney(paid)}` : ""}
+                          {creditApplied > 0.005 ? ` · ${formatMoney(creditApplied)} via credit` : ""}
                         </span>
                       </div>
                       <div className="pax-row__end">
@@ -262,13 +391,14 @@ export function EntryCard({
                               : "Paid"
                           }
                         />
-                        {onRecordPayment && !upcoming && (
+                        {onRecordPayment && (
                           <button
                             className="mini-btn"
                             type="button"
                             onClick={() => onRecordPayment(entry, p.who, ownedByMe)}
+                            title={upcoming ? "Record a payment in advance" : "Record a payment"}
                           >
-                            <Wallet size={13} /> Pay
+                            <Wallet size={13} /> {upcoming ? "Prepay" : "Pay"}
                           </button>
                         )}
                       </div>
@@ -283,20 +413,27 @@ export function EntryCard({
                       >
                         {visiblePay.map((pm) => (
                           <div className="pay-chip" key={pm.id}>
-                            <span className="pay-chip__amt">{formatMoney(pm.amount)}</span>
-                            <span className="pay-chip__meta">
-                              {formatDateShort(pm.date)}
-                              {pm.note ? ` · ${pm.note}` : ""}
-                            </span>
-                            {onEditPayment && (
+                            {onEditPayment ? (
                               <button
-                                className="pay-chip__btn"
                                 type="button"
-                                aria-label="Edit payment"
+                                className="pay-chip__main"
                                 onClick={() => onEditPayment(entry, pm, ownedByMe)}
+                                aria-label="Edit payment"
                               >
-                                <Pencil size={12} />
+                                <span className="pay-chip__amt">{formatMoney(pm.amount)}</span>
+                                <span className="pay-chip__meta">
+                                  {formatDateShort(pm.date)}
+                                  {pm.note ? ` · ${pm.note}` : ""}
+                                </span>
                               </button>
+                            ) : (
+                              <>
+                                <span className="pay-chip__amt">{formatMoney(pm.amount)}</span>
+                                <span className="pay-chip__meta">
+                                  {formatDateShort(pm.date)}
+                                  {pm.note ? ` · ${pm.note}` : ""}
+                                </span>
+                              </>
                             )}
                             {onDeletePayment && (
                               <button
@@ -351,6 +488,30 @@ export function EntryCard({
             </div>
           )}
 
+          {activeEntryApps.length > 0 && (
+            <div className="entry-credit-list">
+              {activeEntryApps.map((a) => (
+                <div className="entry-credit-row" key={a.id}>
+                  <Wallet size={13} className="entry-credit-row__icon" />
+                  <span className="entry-credit-row__text">
+                    {formatMoney(a.amount)} credit applied
+                    <span className="faint"> · {whoName(a.debtorWho, peopleMap)}</span>
+                  </span>
+                  {onReverseCredit && (
+                    <button
+                      className="mini-btn"
+                      type="button"
+                      onClick={() => onReverseCredit(a)}
+                      title="Undo credit application"
+                    >
+                      <Undo2 size={12} /> <span className="mini-btn__label">Undo</span>
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="entry-card__actions">
             {onEdit && (
               <button className="mini-btn" type="button" onClick={() => onEdit(entry)}>
@@ -378,12 +539,20 @@ export function EntryCard({
   );
 }
 
-function Fact({ label, value, hint }) {
-  return (
-    <div className="fact">
+function Fact({ label, value, hint, onTap }) {
+  const inner = (
+    <>
       <span className="fact__label">{label}</span>
       <span className="fact__value">{value}</span>
       {hint && <span className="fact__hint">{hint}</span>}
-    </div>
+    </>
   );
+  if (onTap) {
+    return (
+      <button type="button" className="fact fact--tappable" onClick={onTap}>
+        {inner}
+      </button>
+    );
+  }
+  return <div className="fact">{inner}</div>;
 }

@@ -49,7 +49,36 @@ db.version(2)
     await tx.table("settings").toCollection().modify(backfill);
   });
 
+/* v3 - credit offset ledger. `creditApplications` records each time a debtor's
+   overpayment credit is applied against a specific debt (target entry), so the
+   offset has an explicit, reversible history (never a silent balance mutation).
+   Synced like the other record tables (LWW + tombstones). New empty table, so
+   no data upgrade step is needed. */
+db.version(3).stores({
+  people: "id, isArchived, createdAt",
+  groups: "id, ownerType, ownerPersonId, isArchived, createdAt",
+  entries: "id, groupId, date, createdAt",
+  payments: "id, entryId, date, createdAt",
+  settings: "id",
+  deletions: "[table+id], table, deletedAt",
+  creditApplications: "id, targetEntryId, groupId, debtorKey, creditorKey, date, createdAt",
+});
+
 export const SETTINGS_ID = "app";
+
+/* Settings keys that are DEVICE-LOCAL and must never travel through Drive sync:
+   connection state + the per-device sync bookkeeping and a sync's own
+   `lastSyncedAt` write can't make the local snapshot "dirty". */
+export const DEVICE_LOCAL_SETTINGS = Object.freeze([
+  "gdriveConnected",
+  "gdriveUserEmail",
+  "gdriveFileId",
+  "gdriveEtag",
+  "gdriveToken",
+  "lastSyncedAt",
+  "lastRemotePollAt",
+  "lastLocalHash",
+]);
 
 export const DEFAULTS = Object.freeze({
   defaultFuelPricePerLiter: 1.99, // MYR/L (RON95 subsidy ballpark; user-editable)
@@ -81,6 +110,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   dateFormat: DEFAULTS.dateFormat,
   defaultSplitMethod: DEFAULTS.defaultSplitMethod,
   defaultMaintenancePct: DEFAULTS.defaultMaintenancePct,
+  upcomingWindow: "1mo", // how far ahead upcoming trips show inline (see lib/upcoming.js)
   onboardedAt: null,
 });
 
@@ -112,7 +142,14 @@ export async function getSettings() {
 
 export async function updateSettings(patch) {
   const s = await getSettings();
-  const next = { ...s, ...patch, updatedAt: nowISO() };
+  const next = { ...s, ...patch };
+  // A patch that only touches device-local sync bookkeeping must NOT bump the
+  // synced `updatedAt` - otherwise every sync would make this device's settings
+  // look newer and win the last-write-wins merge over real pref changes.
+  const onlyDeviceLocal = Object.keys(patch).every((k) =>
+    DEVICE_LOCAL_SETTINGS.includes(k)
+  );
+  if (!onlyDeviceLocal) next.updatedAt = nowISO();
   await db.settings.put(next);
   return next;
 }

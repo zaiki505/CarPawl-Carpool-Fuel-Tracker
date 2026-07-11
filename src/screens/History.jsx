@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useAllData } from "../db/hooks.js";
 import { useEntryActions } from "../app/useEntryActions.js";
 import { EntryCard } from "../components/EntryCard.jsx";
+import { UpcomingReveal } from "../components/UpcomingReveal.jsx";
 import { EmptyState, Segment } from "../components/ui/Primitives.jsx";
 import { ScreenLoading } from "../components/ui/ScreenLoading.jsx";
 import { Select } from "../components/ui/Select.jsx";
@@ -250,26 +251,32 @@ export function History() {
           <p className="muted" style={{ fontSize: "0.76rem", marginBottom: "0.6rem" }}>
             {filtered.length} {entryNoun}{filtered.length === 1 ? "" : "s"}
           </p>
-          {filtered.map((e) => (
-            <EntryCard
-              key={e.id}
-              entry={e}
-              payments={payments}
-              peopleMap={peopleMap}
-              ownedByMe={data.groupOwnedMap.get(e.groupId)}
-              ownerName={personName(groupMap.get(e.groupId)?.ownerPersonId, peopleMap)}
-              fallbackTitle={groupMap.get(e.groupId)?.name}
-              onlyWho={whoFilter.length > 0 ? whoSet : null}
-              onRecordPayment={entryActions.onRecordPayment}
-              onEditPayment={entryActions.onEditPayment}
-              onDeletePayment={entryActions.onDeletePayment}
-              onQuickSettle={entryActions.onQuickSettle}
-              onClearPayments={entryActions.onClearPayments}
-              onEdit={entryActions.onEditEntry}
-              onDuplicate={entryActions.onDuplicateEntry}
-              onDelete={entryActions.onDeleteEntry}
-            />
-          ))}
+          <UpcomingReveal
+            entries={filtered}
+            windowValue={data.settings?.upcomingWindow}
+            renderEntry={(e) => (
+              <EntryCard
+                key={e.id}
+                entry={e}
+                payments={payments}
+                peopleMap={peopleMap}
+                applications={data.creditApplications}
+                ownedByMe={data.groupOwnedMap.get(e.groupId)}
+                ownerName={personName(groupMap.get(e.groupId)?.ownerPersonId, peopleMap)}
+                fallbackTitle={groupMap.get(e.groupId)?.name}
+                onlyWho={whoFilter.length > 0 ? whoSet : null}
+                onRecordPayment={entryActions.onRecordPayment}
+                onEditPayment={entryActions.onEditPayment}
+                onDeletePayment={entryActions.onDeletePayment}
+                onQuickSettle={entryActions.onQuickSettle}
+                onClearPayments={entryActions.onClearPayments}
+                onEdit={entryActions.onEditEntry}
+                onDuplicate={entryActions.onDuplicateEntry}
+                onDelete={entryActions.onDeleteEntry}
+                onReverseCredit={entryActions.onReverseCredit}
+              />
+            )}
+          />
         </section>
       )}
     </div>

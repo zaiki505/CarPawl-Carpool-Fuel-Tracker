@@ -1,10 +1,16 @@
 import React from "react";
 import { haptic } from "../../lib/haptics.js";
-const { useRef, useEffect, useState } = React;
+const { useRef, useEffect, useState, useCallback } = React;
 
 /* The Zaiki interactive Cyber Cat mascot. SVG geometry lifted verbatim from
    the portfolio's footer cat. Eyes track the cursor; hover = happy, click
    cycles playful moods, spam-clicking makes it flee with squash & stretch.
+
+   Optional props:
+   - theme: "dark" | "light" - the pupils dilate in the dark and constrict in
+     the light, like a real cat's eyes reacting to the room.
+   - reactOnAnyClick: when true, tapping ANY button on the page makes the cat
+     pull a surprised or curious face.
    Styles are injected once (component is self-contained). */
 
 const CAT_CSS = `
@@ -38,9 +44,13 @@ const CAT_CSS = `
 .zcat.cat--annoyed .mouth-neutral{opacity:0;}
 .zcat.cat--annoyed .mouth-annoyed{opacity:1;}
 .zcat.cat--react .cat-eye{transform:scale(1.16);}
-.zcat.cat--react .cat-sweat{opacity:1;}
+.zcat.cat--react .cat-sweat{opacity:0;}
 .zcat.cat--react .mouth-neutral{opacity:0;}
 .zcat.cat--react .mouth-annoyed{opacity:1;}
+.zcat.cat--curious .cat-eye{transform:scale(1.16) translateY(-1px);}
+.zcat.cat--curious .cat-pupil-wrap{transform:scale(1.6)!important;}
+.zcat.cat--pupil-dark .cat-pupil-wrap{transform:scale(1.5);}
+.zcat.cat--pupil-light .cat-pupil-wrap{transform:scaleX(0.44) scaleY(1.5);}
 .zcat.cat--flee{animation:zcatFlee 3.4s cubic-bezier(.45,0,.55,1) forwards!important;pointer-events:none;}
 @keyframes zcatFlee{0%{transform:translate(0,0) scale(1,1);}6%{transform:translate(-3%,4%) scale(1.3,.7);}20%{transform:translate(22vw,0) scale(1.32,.68);}44%{transform:translate(122vw,-9vh) scale(.85,1.15);}72%{transform:translate(122vw,0) scale(1,1);}90%{transform:translate(14vw,-8vh) scale(.85,1.15);}100%{transform:translate(0,0) scale(1,1);}}
 @media (prefers-reduced-motion: reduce){.zcat .cat-eye,.zcat .cat-pupil-wrap{transition:none;}.zcat.cat--flee{animation:none;}}
@@ -56,11 +66,13 @@ function useInjectCss() {
   }, []);
 }
 
-export function CyberCat({ size = 120, hint = "Meow!" }) {
+export function CyberCat({ size = 120, hint = "Meow!", theme, reactOnAnyClick = false }) {
   useInjectCss();
   const btnRef = useRef(null);
   const pupilRefs = useRef([]);
   const [mood, setMood] = useState("");
+  const moodRef = useRef("");
+  moodRef.current = mood;
   const clicks = useRef(0);
   const moodTimer = useRef(null);
   const clickTimer = useRef(null);
@@ -82,11 +94,27 @@ export function CyberCat({ size = 120, hint = "Meow!" }) {
     return () => window.removeEventListener("mousemove", onMove);
   }, [mood]);
 
-  const tempMood = (cls, ms) => {
+  // Show a temporary mood, then fall back to neutral. Stable (uses refs).
+  const showFace = useCallback((cls, ms = 700) => {
     setMood(cls);
     clearTimeout(moodTimer.current);
     moodTimer.current = setTimeout(() => setMood((m) => (m === cls ? "" : m)), ms);
-  };
+  }, []);
+
+  // React with a surprised/curious face when any OTHER button on the page is
+  // tapped. Registered once; reads the live mood via a ref.
+  useEffect(() => {
+    if (!reactOnAnyClick) return;
+    const onDocClick = (e) => {
+      if (moodRef.current === "flee") return;
+      const btn = e.target.closest("button");
+      if (!btn || btn.closest(".zcat-btn")) return; // ignore non-buttons + the cat itself
+      const faces = ["react", "curious"];
+      showFace(faces[Math.floor(Math.random() * faces.length)], 650);
+    };
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, [reactOnAnyClick, showFace]);
 
   const onEnter = () => { if (mood !== "flee") setMood("happy"); };
   const onLeave = () => { if (mood === "happy") setMood(""); };
@@ -104,14 +132,17 @@ export function CyberCat({ size = 120, hint = "Meow!" }) {
       return;
     }
     const moods = ["angry", "annoyed", "react"];
-    tempMood(moods[Math.floor(Math.random() * moods.length)], 700);
+    showFace(moods[Math.floor(Math.random() * moods.length)], 700);
   };
+
+  const pupilClass =
+    theme === "dark" ? " cat--pupil-dark" : theme === "light" ? " cat--pupil-light" : "";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.55rem" }}>
       <button
         ref={btnRef}
-        className={`footer-cat zcat zcat-btn${mood ? " cat--" + mood : ""}`}
+        className={`footer-cat zcat zcat-btn${mood ? " cat--" + mood : ""}${pupilClass}`}
         style={{ "--zcat-size": size + "px" }}
         type="button"
         aria-label="Pet the cat"
