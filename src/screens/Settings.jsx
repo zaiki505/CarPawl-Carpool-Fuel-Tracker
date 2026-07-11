@@ -57,7 +57,8 @@ import {
   PawPrint,
   Info,
 } from "../components/ui/Icons.jsx";
-import { GLOSSARY } from "../lib/glossary.js";
+import { ConceptCards } from "../components/ConceptCards.jsx";
+import { CheckUpdateButton } from "../components/CheckUpdateButton.jsx";
 import { syncNow, useSyncStatus, connectAndPrepare, resolveConflict } from "../lib/syncEngine.js";
 import { disconnect, deleteRemoteFile } from "../lib/drive.js";
 import { isNative, isAndroidWeb } from "../lib/platform.js";
@@ -69,7 +70,7 @@ import {
 import { biometricAvailable, verifyBiometric } from "../lib/biometric.js";
 
 const ANDROID_APK_URL =
-  "https://github.com/zaiki505/CarPawl-Carpool-Fuel-Tracker/releases/download/v0.2.6/CarPawl.v0.2.6.apk";
+  "https://github.com/zaiki505/CarPawl-Carpool-Fuel-Tracker/releases/download/v0.2.7/CarPawl.v0.2.7.apk";
 
 /* Settings: appearance, fuel/format prefs, default fuel price, the global people list, archived items with
    restore, JSON backup/restore, and the CyberCat easter egg. */
@@ -1054,16 +1055,9 @@ export function Settings() {
           How it works
         </h2>
         <p className="field-hint" style={{ marginTop: 0, marginBottom: "0.6rem" }}>
-          A quick guide to the terms CarPawl uses.
+          Swipe through the terms CarPawl uses.
         </p>
-        <div className="concepts-list">
-          {Object.entries(GLOSSARY).map(([key, c]) => (
-            <div className="concept-row" key={key}>
-              <p className="concept-row__term">{c.term}</p>
-              <p className="concept-row__desc">{c.long}</p>
-            </div>
-          ))}
-        </div>
+        <ConceptCards />
       </section>
 
       {/* Danger zone: permanent deletes + wipe everything */}
@@ -1149,8 +1143,9 @@ export function Settings() {
               <CyberCat size={110} theme={theme} reactOnAnyClick hint="you found me!" />
             </div>
           )}
+          <CheckUpdateButton />
           <p className="faint" style={{ fontSize: "0.68rem" }}>
-            v0.2.6 · Made by Zaiki
+            v0.2.7 · Made by Zaiki
           </p>
         </div>
       )}

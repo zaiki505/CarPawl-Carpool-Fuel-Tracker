@@ -55,15 +55,26 @@ export function InfoTip({ term, text, label }) {
 
   return (
     <span className="info-tip">
-      <button
+      {/* A <span role="button"> rather than a real <button>: buttons are
+          "labelable", so when this sits inside a Field's <label> the whole
+          label forwards its clicks here - making the tap target the entire
+          label row. A span isn't labelable, so only the icon triggers it. */}
+      <span
         ref={btnRef}
-        type="button"
+        role="button"
+        tabIndex={0}
         className="info-tip__btn"
         onClick={toggle}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggle(e);
+          }
+        }}
         aria-label={title ? `About ${title}` : "More info"}
       >
         <Info size={13} />
-      </button>
+      </span>
       {open &&
         pos &&
         createPortal(

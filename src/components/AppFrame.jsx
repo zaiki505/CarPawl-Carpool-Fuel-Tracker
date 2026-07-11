@@ -62,6 +62,9 @@ export function AppFrame() {
       <Background />
       {screen}
       <BottomNav
+        // The add-refuel FAB only belongs on Home, Vehicles and History (and a
+        // vehicle's own page, which lives under Vehicles) - not on Settings.
+        showAdd={tab !== "settings"}
         onAdd={() =>
           openSheet({
             type: "addEntry",

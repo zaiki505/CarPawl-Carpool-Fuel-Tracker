@@ -760,6 +760,240 @@ body.light .bottom-nav__pill {
   padding-top: 0;
   margin-top: 0;
 }
+
+/* Add-entry wizard (#7): step progress bar + review + success screens.
+   Same tokens as the rest of the sheet, so it stays on-theme in both modes. */
+.wizard-steps {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+  margin-bottom: 0.4rem;
+}
+.wizard-step {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  background: none;
+  border: none;
+  padding: 0.1rem 0;
+  cursor: default;
+  position: relative;
+}
+.wizard-step.is-done,
+.wizard-step.is-reachable { cursor: pointer; }
+/* Connector line running behind the dots. */
+.wizard-step::before {
+  content: "";
+  position: absolute;
+  top: 0.72rem;
+  left: -50%;
+  width: 100%;
+  height: 2px;
+  background: var(--border-hairline);
+  z-index: 0;
+}
+.wizard-step:first-child::before { display: none; }
+.wizard-step.is-active::before,
+.wizard-step.is-done::before { background: var(--highlight); }
+.wizard-step__dot {
+  position: relative;
+  z-index: 1;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.75rem;
+  font-weight: 800;
+  background: var(--accent-wash-06);
+  border: 1.5px solid var(--border-hairline);
+  color: var(--text-muted);
+}
+.wizard-step.is-active .wizard-step__dot {
+  border-color: var(--highlight);
+  color: var(--highlight);
+  background: var(--accent-wash-12);
+}
+.wizard-step.is-done .wizard-step__dot {
+  background: var(--highlight);
+  border-color: var(--highlight);
+  color: #fff;
+}
+.wizard-step__label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: bold;
+  color: var(--text-faint);
+}
+.wizard-step.is-active .wizard-step__label { color: var(--highlight); }
+.wizard-step.is-done .wizard-step__label { color: var(--text-muted); }
+
+.wizard-review { display: flex; flex-direction: column; gap: 0.7rem; }
+.wizard-review__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.9rem;
+  border-radius: 12px;
+  background: var(--accent-wash-06);
+  border: 1px solid var(--border-hairline);
+}
+.review-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.85rem;
+}
+.review-row > span { color: var(--text-muted); }
+.review-row > strong { font-weight: bold; text-align: right; }
+.review-row--wrap > strong { word-break: break-word; }
+.wizard-review__facts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.4rem;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--border-hairline);
+  border-bottom: 1px solid var(--border-hairline);
+}
+@media (max-width: 439px) {
+  .wizard-review__facts { grid-template-columns: repeat(2, 1fr); }
+}
+.review-fact { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.review-fact__label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+.review-fact__value { font-size: 0.8rem; font-weight: bold; white-space: nowrap; }
+.wizard-review__total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  background: var(--accent-wash-12);
+  border: 1px solid var(--accent-border-25);
+}
+.wizard-review__total > span {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  font-weight: bold;
+}
+.wizard-review__total > strong { font-size: 1.35rem; font-weight: 800; }
+
+.wizard-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.45rem;
+  padding: 1.2rem 0.4rem 0.4rem;
+}
+.wizard-done__icon {
+  width: 3.4rem;
+  height: 3.4rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: var(--available);
+  margin-bottom: 0.2rem;
+}
+.wizard-done__title { margin: 0; font-size: 1.25rem; font-weight: 800; }
+.wizard-done__sub { margin: 0; color: var(--text-muted); font-size: 0.85rem; }
+.wizard-done__summary {
+  width: 100%;
+  margin-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.9rem;
+  border-radius: 12px;
+  background: var(--accent-wash-06);
+  border: 1px solid var(--border-hairline);
+  text-align: left;
+}
+
+/* #6 route-distance helper in the Fuel step. */
+.route-toggle {
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  background: var(--surface-chip);
+  border: 1px solid var(--border-hairline);
+  color: var(--text-body);
+  font-size: 0.74rem;
+  font-weight: bold;
+  cursor: pointer;
+}
+.route-calc {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  padding: 0.8rem;
+  border-radius: 12px;
+  background: var(--accent-wash-06);
+  border: 1px solid var(--border-hairline);
+}
+.route-calc__head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  font-weight: bold;
+  color: var(--highlight);
+}
+.route-calc__close {
+  margin-left: auto;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.route-calc input {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-chip);
+  border-radius: 10px;
+  padding: 0.6rem 0.7rem;
+  outline: none;
+  transition: border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+}
+.route-calc input:focus {
+  border-color: var(--accent-border-40);
+  background: rgba(167, 84, 255, 0.06);
+  box-shadow: 0 0 0 3px rgba(167, 84, 255, 0.12);
+}
+body.light .route-calc input {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
+  color: var(--darkFont);
+}
+.route-calc__go { justify-content: center; }
+.route-calc__error { color: var(--unavailable); margin: 0; }
+.route-calc__ok { color: var(--available); margin: 0; }
+.route-calc__note { margin: 0; opacity: 0.75; }
+
 .sheet__title { margin: 0; font-size: 1.15rem; font-weight: 800; }
 .sheet__body {
   overflow-y: auto;
@@ -1282,6 +1516,29 @@ body.light .toast[data-state="info"] { background: rgba(243, 232, 255, 0.9); }
 
 /* Android "update available" banner (dismissable) - same shape as the reauth
    banner, accented with the brand highlight. */
+/* Manual "check for updates" pill in the Settings footer (Android only). */
+.check-update {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 auto 0.5rem;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  background: var(--surface-chip);
+  border: 1px solid var(--border-hairline);
+  color: var(--text-body);
+  font-size: 0.72rem;
+  font-weight: bold;
+  cursor: pointer;
+  text-decoration: none;
+}
+.check-update:disabled { opacity: 0.6; cursor: default; }
+.check-update--found {
+  color: var(--highlight);
+  background: var(--accent-wash-12);
+  border-color: var(--accent-border-25);
+}
+
 .update-banner {
   display: flex;
   align-items: center;
@@ -1902,16 +2159,15 @@ button.chip-fact {
 /* Inline info tooltip (#4) + the "How it works" concepts page (#5). */
 .info-tip { display: inline-flex; vertical-align: middle; }
 .info-tip__btn {
-  display: inline-grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0;
+  line-height: 0;
   border: none;
   background: none;
   color: var(--text-faint);
   cursor: pointer;
-  border-radius: 999px;
   transition: color 0.2s ease;
 }
 .info-tip__btn:hover { color: var(--highlight); }
@@ -1933,20 +2189,77 @@ button.chip-fact {
 .info-tip__title { font-size: 0.78rem; font-weight: 800; color: var(--highlight); }
 .info-tip__text { font-size: 0.74rem; color: var(--text-body); line-height: 1.5; }
 
-.concepts-list { display: flex; flex-direction: column; gap: 0.5rem; }
-.concept-row {
-  padding: 0.7rem 0.8rem;
-  border-radius: 12px;
+/* Swipeable concept deck (#8): one full-width card per term, scroll-snapped. */
+.concept-cards { display: flex; flex-direction: column; gap: 0.7rem; }
+.concept-cards__track {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.concept-cards__track::-webkit-scrollbar { display: none; }
+.concept-card {
+  scroll-snap-align: center;
+  flex: 0 0 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.1rem;
+  border-radius: 14px;
   background: var(--surface-chip);
   border: 1px solid var(--border-hairline);
+  min-height: 210px;
 }
-.concept-row__term {
-  font-weight: 800;
-  font-size: 0.85rem;
+.concept-card__icon {
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--accent-wash-12);
+  border: 1px solid var(--accent-border-25);
   color: var(--highlight);
-  margin: 0 0 0.2rem;
 }
-.concept-row__desc { font-size: 0.76rem; color: var(--text-body); line-height: 1.55; margin: 0; }
+.concept-card__term { margin: 0; font-size: 1.05rem; font-weight: 800; }
+.concept-card__short { margin: 0; font-weight: bold; font-size: 0.88rem; }
+.concept-card__long {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+.concept-card__count {
+  margin-top: auto;
+  padding-top: 0.4rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+.concept-cards__dots {
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+}
+.concept-dot {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--text-faint);
+  opacity: 0.5;
+  cursor: pointer;
+  transition: width 0.2s ease, opacity 0.2s ease, background 0.2s ease;
+}
+.concept-dot.is-active {
+  width: 20px;
+  border-radius: 4px;
+  opacity: 1;
+  background: var(--highlight);
+}
 .credit-debt-row__amt { margin: 0.5rem 0.2rem 0.15rem; }
 .credit-debt-row__amt input {
   width: 100%;

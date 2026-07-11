@@ -3,7 +3,7 @@ import { Sheet } from "./ui/Sheet.jsx";
 import { Field, Segment } from "./ui/Primitives.jsx";
 import { DatePicker } from "./ui/DatePicker.jsx";
 import { Select } from "./ui/Select.jsx";
-import { RECURRENCE_OPTIONS } from "../lib/recurrence.js";
+import { RECURRENCE_OPTIONS, recurrenceLabel } from "../lib/recurrence.js";
 import {
   useGroups,
   usePeople,
@@ -22,7 +22,17 @@ import {
   driverCompBase,
 } from "../lib/calc.js";
 import { SPLIT_METHOD_OPTIONS, splitMethodHint } from "../lib/splitMethods.js";
-import { formatMoney, todayISODate, parseNum, isFutureDate } from "../lib/format.js";
+import {
+  formatMoney,
+  todayISODate,
+  parseNum,
+  isFutureDate,
+  formatKm,
+  formatLiters,
+  formatDate,
+} from "../lib/format.js";
+import { InfoTip } from "./ui/InfoTip.jsx";
+import { RouteDistanceField } from "./RouteDistanceField.jsx";
 import { whoName } from "../lib/names.js";
 import { ME, person as mkPerson, whoKey } from "../lib/identity.js";
 import { useApp } from "../app/AppContext.jsx";
@@ -49,7 +59,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
   const settings = useSettings();
   const existing = useEntry(entryId);
   const entryPayments = usePaymentsForEntry(entryId) || [];
-  const { toast, askConfirm, clearSelection } = useApp();
+  const { toast, askConfirm, clearSelection, openGroup } = useApp();
   // Whether the passenger set/values were touched this session - gates whether
   // passengers are included in a multi-edit patch.
   const [paxEdited, setPaxEdited] = useState(false);
@@ -106,6 +116,14 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
   // Custom method: how the leftover pool splits - 'equal' | 'distance'.
   const [customRemainderSplit, setCustomRemainderSplit] = useState("equal");
   const [recurrence, setRecurrence] = useState("none");
+
+  // Wizard: which step is showing (1 Details, 2 Fuel, 3 Split, 4 Review). When
+  // opened focused on a specific field, jump straight to the step holding it.
+  const [step, setStep] = useState(() => stepForFocus(focusField));
+  // After a fresh add/duplicate we show a short success screen instead of just
+  // closing; `savedInfo` carries the little summary it renders.
+  const [done, setDone] = useState(false);
+  const [savedInfo, setSavedInfo] = useState(null);
 
   // One-time initialisation once data is available. `src` seeds both edit mode
   // (from the loaded entry) and duplicate mode (from the passed-in entry). A
@@ -553,17 +571,99 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
         }
         await updateEntry(entryId, payload);
         toast(`${isOwned ? "Refuel" : "Trip"} updated`);
+        onClose();
       } else {
         await createEntry(payload);
         haptic("light");
-        toast(`${isOwned ? "Refuel" : "Trip"} saved ⛽`);
+        // Show the little success screen instead of closing outright. It carries
+        // a snapshot of what was saved so the numbers can't shift under it.
+        setSavedInfo({
+          groupId,
+          isOwned,
+          amount: bannerAmount,
+          label: bannerLabel,
+          passengers: syncedPassengers.length,
+          date,
+        });
+        setDone(true);
+        setBusy(false);
       }
-      onClose();
     } catch (e) {
       // 8: blocked passenger removal comes back with a clear message.
       toast(e.message, "error");
       setBusy(false);
     }
+  }
+
+  // Whether a given step's own must-have is satisfied. Used both to gate Next
+  // and to decide if you can jump forward to a later step.
+  function stepValid(k) {
+    if (k === 1) return Boolean(groupId);
+    if (k === 2) return parseNum(primaryValue) > 0;
+    if (k === 3) return isOwned || syncedPassengers.length > 0;
+    return true; // step 4 (Review) has nothing of its own to fill in
+  }
+  // Can we jump straight to step n? Only if every step before it is filled in.
+  function canReach(n) {
+    for (let k = 1; k < n; k++) if (!stepValid(k)) return false;
+    return true;
+  }
+  // The nudge shown when a step still needs something before you can pass it.
+  function stepMissingMsg(k) {
+    if (k === 1) return "Pick a vehicle first.";
+    if (k === 2)
+      return `Enter a cost, liters or distance for this ${isOwned ? "refuel" : "trip"} first.`;
+    if (k === 3) return "Add at least one passenger - a carpool trip can't be solo.";
+    return "Fill in the earlier steps first.";
+  }
+  // Tap a step in the progress bar: go back freely, jump forward only when the
+  // earlier steps are filled in - otherwise toast what's still missing.
+  function jumpToStep(n) {
+    if (n === step) return;
+    if (n < step) {
+      haptic("selection");
+      setStep(n);
+      return;
+    }
+    for (let k = 1; k < n; k++) {
+      if (!stepValid(k)) {
+        // Point them at the first step that still needs something, and land
+        // them on it so they can fix it right away.
+        toast(stepMissingMsg(k), "error");
+        if (k !== step) setStep(k);
+        return;
+      }
+    }
+    haptic("selection");
+    setStep(n);
+  }
+
+  // Move to the next wizard step, blocking on that step's must-haves so you
+  // can't skip past missing data (full validation still runs in save()).
+  function goNext() {
+    if (step === 1 && !groupId) {
+      toast("Pick a vehicle first.", "error");
+      return;
+    }
+    if (step === 2 && !(parseNum(primaryValue) > 0)) {
+      toast(`Enter a cost, liters or distance for this ${isOwned ? "refuel" : "trip"}.`, "error");
+      return;
+    }
+    if (step === 3 && !isOwned && syncedPassengers.length === 0) {
+      toast("Add at least one passenger - a carpool trip can't be solo.", "error");
+      return;
+    }
+    haptic("light");
+    setStep((s) => Math.min(4, s + 1));
+  }
+  function goBack() {
+    setStep((s) => Math.max(1, s - 1));
+  }
+  // "View trip" on the success screen: close, then open the group it landed in.
+  function viewTrip() {
+    const gid = savedInfo?.groupId;
+    onClose();
+    if (gid) openGroup(gid);
   }
 
   // Value shown in each editable card cell: the field you're currently editing
@@ -632,7 +732,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
       }
       onClose={onClose}
       banner={
-        multiEdit ? (
+        done ? null : multiEdit ? (
           <div className="sheet-banner">
             <span className="sheet-banner__label">
               Editing {multiEntries.length} entries - only the fields you change get applied to all of them.
@@ -652,28 +752,146 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
         ) : null
       }
       footer={
-        <>
-          <button className="cta-secondary" type="button" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="cta-primary btn-block"
-            type="button"
-            onClick={save}
-            disabled={busy || !groupId}
-          >
-            {editing ? "Save changes" : isOwned ? "Save refuel" : "Save trip"}
-          </button>
-        </>
+        done ? (
+          <>
+            <button className="cta-secondary" type="button" onClick={onClose}>
+              Done
+            </button>
+            {savedInfo?.groupId && (
+              <button className="cta-primary btn-block" type="button" onClick={viewTrip}>
+                View {savedInfo?.isOwned ? "refuel" : "trip"}
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <button
+              className="cta-secondary"
+              type="button"
+              onClick={step > 1 ? goBack : onClose}
+            >
+              {step > 1 ? "Back" : "Cancel"}
+            </button>
+            {step < 4 ? (
+              <button
+                className="cta-primary btn-block"
+                type="button"
+                onClick={goNext}
+                disabled={!groupId}
+              >
+                Next
+              </button>
+            ) : (
+              <button
+                className="cta-primary btn-block"
+                type="button"
+                onClick={save}
+                disabled={busy || !groupId}
+              >
+                {multiEdit ? "Apply to all" : editing ? "Save changes" : isOwned ? "Save refuel" : "Save trip"}
+              </button>
+            )}
+          </>
+        )
       }
     >
       {groups.length === 0 ? (
         <p className="muted">Add a car first, then log a refuel.</p>
+      ) : done ? (
+        <div className="wizard-done">
+          <div className="wizard-done__icon">
+            <Check size={34} />
+          </div>
+          <h3 className="wizard-done__title">
+            {savedInfo?.isOwned ? "Refuel added!" : "Trip added!"}
+          </h3>
+          <p className="wizard-done__sub">It's saved and your balances are up to date.</p>
+          <div className="wizard-done__summary">
+            <div className="review-row">
+              <span>{savedInfo?.label}</span>
+              <strong className={savedInfo?.isOwned ? "pos" : "neg"}>
+                {formatMoney(savedInfo?.amount || 0)}
+              </strong>
+            </div>
+            <div className="review-row">
+              <span>Passengers</span>
+              <strong>{savedInfo?.passengers || 0}</strong>
+            </div>
+            <div className="review-row">
+              <span>Date</span>
+              <strong>{formatDate(savedInfo?.date)}</strong>
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="field-grid">
-          <div className="form-section-head" id="ae-vehicle">Vehicle</div>
-          {/* Group picker */}
-          <Field label="Which car / carpool?">
+          {/* Step progress - tap a finished step to go back, or jump forward to
+              any step whose earlier steps are already filled in. */}
+          <div className="wizard-steps">
+            {STEP_TITLES.map((label, i) => {
+              const n = i + 1;
+              const state = n === step ? "is-active" : n < step ? "is-done" : "is-todo";
+              const reachable = n < step || (n > step && canReach(n));
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  className={"wizard-step " + state + (reachable ? " is-reachable" : "")}
+                  onClick={() => jumpToStep(n)}
+                >
+                  <span className="wizard-step__dot">{n < step ? <Check size={12} /> : n}</span>
+                  <span className="wizard-step__label">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Step 1 - Details: when, what, and which vehicle */}
+          {step === 1 && (
+            <>
+              <div className="field-inline">
+                <Field
+                  label={<>Date{isFutureDate(date) && <InfoTip term="upcoming" />}</>}
+                  hint={
+                    isFutureDate(date)
+                      ? `Scheduled ${isOwned ? "refuel" : "trip"} - it won't count toward balances or spend until this date.`
+                      : undefined
+                  }
+                >
+                  <span id="ae-date" style={{ display: "block" }}>
+                    <DatePicker value={date} onChange={setDate} />
+                  </span>
+                </Field>
+                <Field label="Title (optional)">
+                  <input
+                    type="text"
+                    placeholder="e.g. Petronas run"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                  />
+                </Field>
+              </div>
+
+              <Field
+                label={<>Repeats <InfoTip term="recurring" /></>}
+                hint={
+                  recurrence !== "none"
+                    ? `Auto-schedules the next ${isOwned ? "refuel" : "trip"} as upcoming; when it passes, the next one is scheduled.`
+                    : `A one-off ${isOwned ? "refuel" : "trip"}. Pick a schedule to repeat it automatically.`
+                }
+              >
+                <span id="ae-recurrence" style={{ display: "block" }}>
+                  <Select value={recurrence} onChange={setRecurrence} options={RECURRENCE_OPTIONS} />
+                </span>
+              </Field>
+
+              <Field
+                label={
+                  <span id="ae-vehicle">
+                    Which car / carpool? <InfoTip term="ownVsCarpool" />
+                  </span>
+                }
+              >
             <div className="chip-wrap">
               {orderedGroups.map((g) => (
                 <button
@@ -689,10 +907,12 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
               ))}
             </div>
           </Field>
+            </>
+          )}
 
-          <div className="form-section-head">Fuel</div>
-          {/* Fuel price is a rate; the four figures below are all editable and
-              recalculate each other. Whichever you type into becomes the source. */}
+          {/* Step 2 - Fuel: price + the four figures that derive each other */}
+          {step === 2 && (
+            <>
           <Field label="Fuel price (RM/L)">
             <input
               id="ae-fuelprice"
@@ -752,11 +972,26 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
            <p className="field-hint" style={{ margin: "0 0 -0.2rem" }}>
             Tap any figure to edit it - the others update automatically.
           </p>
+          {/* #6: optionally fill Distance from a start -> end route lookup. */}
+          <RouteDistanceField onDistance={(km) => editField("distance")(String(km))} />
+            </>
+          )}
 
-          <div className="form-section-head">Split</div>
-          {/* Split method */}
+          {/* Step 3 - Split: method, driver-comp extras, and who's riding */}
+          {step === 3 && (
+            <>
           {group && (
-            <Field label="How to split" hint={splitMethodHint(splitMethod, { isOwned })}>
+            <Field
+              label={
+                <>
+                  How to split{" "}
+                  <InfoTip
+                    term={isDistance ? "distanceSplit" : isDriverComp ? "customSplit" : "equalSplit"}
+                  />
+                </>
+              }
+              hint={splitMethodHint(splitMethod, { isOwned })}
+            >
               <Segment
                 value={splitMethod}
                 onChange={setSplitMethod}
@@ -791,7 +1026,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
                   onChange={(e) => setParking(e.target.value)}
                 />
               </Field>
-              <Field label="Maint. %">
+              <Field label={<>Maint. % <InfoTip term="maintenanceMarkup" /></>}>
                 <input
                   type="number"
                   inputMode="decimal"
@@ -1026,43 +1261,71 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
             </div>
           )}
 
-          <div className="form-section-head">Details</div>
-          {/* Date + title */}
-          <div className="field-inline">
-            <Field
-              label="Date"
-              hint={
-                isFutureDate(date)
-                  ? `Scheduled ${isOwned ? "refuel" : "trip"} - it won't count toward balances or spend until this date.`
-                  : undefined
-              }
-            >
-              <span id="ae-date" style={{ display: "block" }}>
-                <DatePicker value={date} onChange={setDate} />
-              </span>
-            </Field>
-            <Field label="Title (optional)">
-              <input
-                type="text"
-                placeholder="e.g. Petronas run"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
-            </Field>
-          </div>
+            </>
+          )}
 
-          <Field
-            label="Repeats"
-            hint={
-              recurrence !== "none"
-                ? `Auto-schedules the next ${isOwned ? "refuel" : "trip"} as upcoming; when it passes, the next one is scheduled.`
-                : `A one-off ${isOwned ? "refuel" : "trip"}. Pick a schedule to repeat it automatically.`
-            }
-          >
-            <span id="ae-recurrence" style={{ display: "block" }}>
-              <Select value={recurrence} onChange={setRecurrence} options={RECURRENCE_OPTIONS} />
-            </span>
-          </Field>
+          {/* Step 4 - Review before saving */}
+          {step === 4 && (
+            <div className="wizard-review">
+              <div className="wizard-review__card">
+                <div className="review-row">
+                  <span>{isOwned ? "Vehicle" : "Carpool"}</span>
+                  <strong>{group?.name || "-"}</strong>
+                </div>
+                <div className="review-row">
+                  <span>Date</span>
+                  <strong>
+                    {formatDate(date)}
+                    {isFutureDate(date) ? " · upcoming" : ""}
+                  </strong>
+                </div>
+                {title.trim() && (
+                  <div className="review-row">
+                    <span>Title</span>
+                    <strong>{title.trim()}</strong>
+                  </div>
+                )}
+                <div className="review-row">
+                  <span>Repeats</span>
+                  <strong>{recurrence !== "none" ? recurrenceLabel(recurrence) : "One-off"}</strong>
+                </div>
+                <div className="wizard-review__facts">
+                  <div className="review-fact">
+                    <span className="review-fact__label">Cost</span>
+                    <span className="review-fact__value">{formatMoney(totals.totalCost)}</span>
+                  </div>
+                  <div className="review-fact">
+                    <span className="review-fact__label">Distance</span>
+                    <span className="review-fact__value">{formatKm(totals.totalDistance)}</span>
+                  </div>
+                  <div className="review-fact">
+                    <span className="review-fact__label">Fuel</span>
+                    <span className="review-fact__value">{formatLiters(totals.totalLiters)}</span>
+                  </div>
+                  <div className="review-fact">
+                    <span className="review-fact__label">Price</span>
+                    <span className="review-fact__value">{formatMoney(totals.fuelPricePerLiter)}/L</span>
+                  </div>
+                </div>
+                <div className="review-row">
+                  <span>Split</span>
+                  <strong>
+                    {SPLIT_METHOD_OPTIONS.find((o) => o.value === splitMethod)?.label || splitMethod}
+                  </strong>
+                </div>
+                {syncedPassengers.length > 0 && (
+                  <div className="review-row review-row--wrap">
+                    <span>Passengers</span>
+                    <strong>{syncedPassengers.map((p) => whoName(p.who, peopleMap)).join(", ")}</strong>
+                  </div>
+                )}
+              </div>
+              <div className="wizard-review__total">
+                <span>{bannerLabel}</span>
+                <strong className={isOwned ? "pos" : "neg"}>{formatMoney(bannerAmount)}</strong>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </Sheet>
@@ -1099,4 +1362,15 @@ function EditCell({ label, value, onChange, prefix, suffix, accent, active, inpu
 
 function round2(n) {
   return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+// Wizard step labels, in order. Index 0 = step 1.
+const STEP_TITLES = ["Details", "Fuel", "Split", "Review"];
+
+// Which wizard step holds a given focus target, so opening the sheet focused on
+// (say) the distance figure lands straight on the Fuel step.
+function stepForFocus(focusField) {
+  if (["cost", "liters", "distance", "fuelPrice", "efficiency"].includes(focusField)) return 2;
+  if (focusField === "tolls") return 3;
+  return 1; // vehicle, date, recurrence, or nothing in particular
 }
