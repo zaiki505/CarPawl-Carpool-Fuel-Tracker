@@ -30,6 +30,10 @@ export function AppProvider({ children }) {
   const [toasts, setToasts] = useState([]);
   // Multi-select of entry cards (id -> entry). Non-empty = selection mode.
   const [selectedEntries, setSelectedEntries] = useState(() => new Map());
+  // First-run guided tour (spotlight walkthrough) running over the dashboard.
+  const [tourActive, setTourActive] = useState(false);
+  const startTour = useCallback(() => setTourActive(true), []);
+  const endTour = useCallback(() => setTourActive(false), []);
 
   const confirmResolver = useRef(null);
 
@@ -236,6 +240,9 @@ export function AppProvider({ children }) {
       clearSelection,
       openOverlay,
       closeOverlay,
+      tourActive,
+      startTour,
+      endTour,
     }),
     [
       tab,
@@ -260,6 +267,9 @@ export function AppProvider({ children }) {
       clearSelection,
       openOverlay,
       closeOverlay,
+      tourActive,
+      startTour,
+      endTour,
     ]
   );
 

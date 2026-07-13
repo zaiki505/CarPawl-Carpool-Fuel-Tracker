@@ -235,8 +235,23 @@ async function nativeLogin(options) {
  * fails do we differ: a user-triggered call (`allowInteractive`) may show the
  * full account chooser; a background call throws DriveAuthError quietly.
  */
-async function getNativeToken({ allowInteractive = false } = {}) {
+async function getNativeToken({ allowInteractive = false, forcePicker = false } = {}) {
   await ensureNativeInit();
+
+  // Explicit (re)connect: always show the account chooser so the user can pick
+  // or switch accounts, instead of silently reusing the last-used one. Skipping
+  // the silent refresh + auto-select path below is what makes the picker appear.
+  // filterByAuthorizedAccounts:false shows every Google account on the device
+  // (so switching accounts works), autoSelectEnabled:false stops it auto-picking
+  // when there's only one.
+  if (forcePicker) {
+    return nativeLogin({
+      scopes: [SCOPE],
+      style: "standard",
+      filterByAuthorizedAccounts: false,
+      autoSelectEnabled: false,
+    });
+  }
 
   try {
     // Ask Play Services to refresh the access token from its stored refresh
@@ -357,7 +372,9 @@ export async function isConnected() {
  */
 export async function connect() {
   if (Capacitor.isNativePlatform()) {
-    _token = await getNativeToken({ allowInteractive: true }); // native account picker
+    // Force the account chooser so a reconnect lets the user pick/switch accounts
+    // rather than silently defaulting to the previously signed-in one.
+    _token = await getNativeToken({ allowInteractive: true, forcePicker: true });
     await persistToken(_token);
     await updateSettings({
       gdriveConnected: true,

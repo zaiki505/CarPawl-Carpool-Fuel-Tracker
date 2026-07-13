@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { computeFuelSpend, FUEL_PERIODS, NO_BASELINE_MESSAGES } from "../lib/fuelSpend.js";
 import { share } from "../lib/calc.js";
 import { ME } from "../lib/identity.js";
-import { formatMoney } from "../lib/format.js";
+import { formatMoney, formatLiters } from "../lib/format.js";
 import { Segment } from "./ui/Primitives.jsx";
 import { TrendingUp, TrendingDown, Fuel } from "./ui/Icons.jsx";
 
@@ -28,7 +28,7 @@ export function FuelSpendCard({ entries, groupOwnedMap, onOpenBreakdown }) {
     [entries, groupOwnedMap, period]
   );
 
-  const { yourSpend, yourSpendBreakdown, groupTotal, trend } = result;
+  const { yourSpend, yourSpendBreakdown, groupTotal, trend, liters } = result;
   const up = trend.direction === "up";
   const curPeriod = FUEL_PERIODS.find((p) => p.value === period) || FUEL_PERIODS[0];
 
@@ -64,10 +64,14 @@ export function FuelSpendCard({ entries, groupOwnedMap, onOpenBreakdown }) {
           title="See spend by vehicle"
         >
           {formatMoney(yourSpend)}
+          {liters > 0 && <span className="fuel-spend-card__liters">{formatLiters(liters)}</span>}
           <span className="stat-card__more" aria-hidden="true">›</span>
         </button>
       ) : (
-        <span className="stat-card__value">{formatMoney(yourSpend)}</span>
+        <span className="stat-card__value">
+          {formatMoney(yourSpend)}
+          {liters > 0 && <span className="fuel-spend-card__liters">{formatLiters(liters)}</span>}
+        </span>
       )}
 
       <div className="fuel-spend-card__break">

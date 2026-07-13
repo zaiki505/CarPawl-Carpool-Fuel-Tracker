@@ -14,6 +14,7 @@ import {
   Cloud,
   Info,
 } from "./ui/Icons.jsx";
+import { CONCEPT_ART } from "./ConceptArt.jsx";
 
 /* A swipeable deck of the app's concepts (#8), replacing the old wall-of-text
    glossary. One card per concept: an icon, the term, a one-line summary, and a
@@ -34,8 +35,12 @@ const ICONS = {
   driveSync: Cloud,
 };
 
-export function ConceptCards() {
-  const entries = Object.entries(GLOSSARY);
+export function ConceptCards({ keys }) {
+  // `keys` optionally narrows the deck to a curated subset (used by onboarding);
+  // otherwise show the whole glossary (the Settings "How it works" page).
+  const entries = keys
+    ? keys.map((k) => [k, GLOSSARY[k]]).filter(([, c]) => c)
+    : Object.entries(GLOSSARY);
   const trackRef = useRef(null);
   const [active, setActive] = useState(0);
 
@@ -58,14 +63,20 @@ export function ConceptCards() {
       <div className="concept-cards__track" ref={trackRef} onScroll={onScroll}>
         {entries.map(([key, c], i) => {
           const Icon = ICONS[key] || Info;
+          const Art = CONCEPT_ART[key];
           return (
             <article className="concept-card" key={key}>
-              <div className="concept-card__icon">
-                <Icon size={22} />
+              <div className="concept-card__art">
+                {Art ? (
+                  <Art />
+                ) : (
+                  <span className="concept-card__icon">
+                    <Icon size={22} />
+                  </span>
+                )}
               </div>
               <h3 className="concept-card__term">{c.term}</h3>
               <p className="concept-card__short">{c.short}</p>
-              <p className="concept-card__long">{c.long}</p>
               <span className="concept-card__count">
                 {i + 1} / {entries.length}
               </span>

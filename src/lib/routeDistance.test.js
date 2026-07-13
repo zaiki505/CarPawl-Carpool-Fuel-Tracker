@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { routeDistanceKm, RouteDistanceError } from "./routeDistance.js";
+import { routeDistanceKm, searchPlaces, RouteDistanceError } from "./routeDistance.js";
 
 /* Coverage for the #6 A->B distance lookup. fetch is mocked so no real network
    hits Nominatim/OSRM; the calls fire in a fixed order (from geocode, to
@@ -49,5 +49,24 @@ describe("routeDistanceKm", () => {
   it("rejects empty input without hitting the network", async () => {
     global.fetch = vi.fn();
     await expect(routeDistanceKm("", "b")).rejects.toBeInstanceOf(RouteDistanceError);
+  });
+});
+
+describe("searchPlaces", () => {
+  it("maps Nominatim rows to {label, lat, lon}", async () => {
+    mockFetch([[{ display_name: "KLCC, Kuala Lumpur", lat: "3.15", lon: "101.71" }]]);
+    const r = await searchPlaces("klcc");
+    expect(r).toEqual([{ label: "KLCC, Kuala Lumpur", lat: 3.15, lon: 101.71 }]);
+  });
+
+  it("returns [] for short queries without hitting the network", async () => {
+    global.fetch = vi.fn();
+    expect(await searchPlaces("ab")).toEqual([]);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("returns [] (never throws) on a failed request", async () => {
+    global.fetch = vi.fn(async () => ({ ok: false, json: async () => ({}) }));
+    expect(await searchPlaces("somewhere")).toEqual([]);
   });
 });

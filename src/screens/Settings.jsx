@@ -59,6 +59,7 @@ import {
 } from "../components/ui/Icons.jsx";
 import { ConceptCards } from "../components/ConceptCards.jsx";
 import { CheckUpdateButton } from "../components/CheckUpdateButton.jsx";
+import { DriveConflictSheet } from "../components/DriveConflictSheet.jsx";
 import { syncNow, useSyncStatus, connectAndPrepare, resolveConflict } from "../lib/syncEngine.js";
 import { disconnect, deleteRemoteFile } from "../lib/drive.js";
 import { isNative, isAndroidWeb } from "../lib/platform.js";
@@ -70,7 +71,7 @@ import {
 import { biometricAvailable, verifyBiometric } from "../lib/biometric.js";
 
 const ANDROID_APK_URL =
-  "https://github.com/zaiki505/CarPawl-Carpool-Fuel-Tracker/releases/download/v0.2.7/CarPawl.v0.2.7.apk";
+  "https://github.com/zaiki505/CarPawl-Carpool-Fuel-Tracker/releases/download/v0.2.8/CarPawl.v0.2.8.apk";
 
 /* Settings: appearance, fuel/format prefs, default fuel price, the global people list, archived items with
    restore, JSON backup/restore, and the CyberCat easter egg. */
@@ -106,6 +107,10 @@ export function Settings() {
   // Android-style two-level settings: null = category list, else the open category.
   const [category, setCategory] = useState(null);
   const [driveConnecting, setDriveConnecting] = useState(false);
+  // When connecting Drive finds data on both sides, hold the conflict here so the
+  // comparison sheet can render (#5). { local, remoteCounts, remote, etag }.
+  const [driveConflict, setDriveConflict] = useState(null);
+  const [driveConflictBusy, setDriveConflictBusy] = useState(false);
   const [bioAvailable, setBioAvailable] = useState(false);
   const fileRef = useRef(null);
   const syncStatus = useSyncStatus();
@@ -395,37 +400,47 @@ export function Settings() {
     }
   }
 
-  // When this device AND Drive both already hold data, let the user choose how
-  // to combine them instead of silently merging. Replace is destructive, so it
-  // always needs a second explicit confirmation - an accidental dismiss can
-  // never wipe local data (it falls back to a safe merge).
-  async function handleDriveConflict(res) {
-    const describe = (c) =>
-      `${c.entries} refuel${c.entries === 1 ? "" : "s"}, ${c.people} ${c.people === 1 ? "person" : "people"}, ${c.groups} car${c.groups === 1 ? "" : "s"}`;
-    const merge = await askConfirm({
-      title: "Both places already have data",
-      body: `This device has ${describe(res.local)}. Google Drive has ${describe(res.remoteCounts)}. Merge keeps everything from both, or use Drive's copy and replace what's on this device.`,
-      confirmLabel: "Merge both",
-      cancelLabel: "Use Drive's copy",
-    });
-    if (merge) {
-      await resolveConflict("merge", res.remote, res.etag);
+  // When this device AND Drive both already hold data, show the comparison sheet
+  // (#5) so the user can see each side and choose. Replace is destructive, so it
+  // still needs a second explicit confirmation; closing the sheet falls back to
+  // a safe merge, so an accidental dismiss can never wipe local data.
+  function handleDriveConflict(res) {
+    setDriveConflict(res);
+  }
+  async function conflictMerge() {
+    const c = driveConflict;
+    if (!c) return;
+    setDriveConflictBusy(true);
+    try {
+      await resolveConflict("merge", c.remote, c.etag);
       toast("Merged and synced");
-      return;
+    } catch (e) {
+      toast(e.message || "Sync failed", "error");
+    } finally {
+      setDriveConflict(null);
+      setDriveConflictBusy(false);
     }
+  }
+  async function conflictReplace() {
+    const c = driveConflict;
+    if (!c) return;
     const ok = await askConfirm({
       title: "Replace this device's data?",
-      body: `This deletes what's on this device (${describe(res.local)}) and uses Drive's copy (${describe(res.remoteCounts)}) instead. This can't be undone.`,
+      body: "This deletes what's only on this device and uses Google Drive's copy instead. This can't be undone.",
       confirmLabel: "Replace with Drive's copy",
-      cancelLabel: "Keep both instead",
+      cancelLabel: "Back",
       danger: true,
     });
-    if (ok) {
-      await resolveConflict("replace", res.remote, res.etag);
+    if (!ok) return; // stay on the comparison sheet
+    setDriveConflictBusy(true);
+    try {
+      await resolveConflict("replace", c.remote, c.etag);
       toast("This device now matches Google Drive");
-    } else {
-      await resolveConflict("merge", res.remote, res.etag);
-      toast("Merged and synced");
+    } catch (e) {
+      toast(e.message || "Sync failed", "error");
+    } finally {
+      setDriveConflict(null);
+      setDriveConflictBusy(false);
     }
   }
 
@@ -1145,9 +1160,20 @@ export function Settings() {
           )}
           <CheckUpdateButton />
           <p className="faint" style={{ fontSize: "0.68rem" }}>
-            v0.2.7 · Made by Zaiki
+            v0.2.8 · Made by Zaiki
           </p>
         </div>
+      )}
+
+      {driveConflict && (
+        <DriveConflictSheet
+          local={driveConflict.local}
+          remote={driveConflict.remoteCounts}
+          busy={driveConflictBusy}
+          onMerge={conflictMerge}
+          onReplace={conflictReplace}
+          onClose={conflictMerge}
+        />
       )}
     </div>
   );

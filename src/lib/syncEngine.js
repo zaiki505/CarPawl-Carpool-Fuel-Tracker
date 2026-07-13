@@ -30,6 +30,10 @@ let _isSyncing = false;
 // focus/change just spams the same failure - until an interactive sync or a
 // reconnect clears it.
 let _needsReauth = false;
+// True only while a sync is writing merged data into the local DB. The Dexie
+// table hooks fire for those writes too; this flag lets notifyDataChanged ignore
+// them so a sync never triggers another sync of its own writes.
+let _applying = false;
 
 // Pub/sub for the React hook
 const _listeners = new Set();
@@ -142,8 +146,15 @@ export async function syncNow({ allowInteractive = false, _local = null, _localH
       merged = mergeSnapshots(local, local, { now: Date.now() });
     } else {
       merged = mergeSnapshots(local, remote || {}, { now: Date.now() });
-      // 4. Apply merged state locally
-      await applySnapshot(merged);
+      // 4. Apply merged state locally. Merge mode keeps rows the user added
+      //    mid-sync (only tombstoned ids are deleted), and _applying stops our
+      //    own writes from scheduling a redundant follow-up sync.
+      _applying = true;
+      try {
+        await applySnapshot(merged, { wholesale: false });
+      } finally {
+        _applying = false;
+      }
     }
 
     const mergedHash = await hashSnapshot(merged);
@@ -187,6 +198,10 @@ export async function syncNow({ allowInteractive = false, _local = null, _localH
     }
   } finally {
     _isSyncing = false;
+    // Start the post-sync quiet buffer from completion (#6): an edit made right
+    // after a sync then waits out AUTO_SYNC_COOLDOWN_MS instead of immediately
+    // racing another sync that could fight the change or re-apply stale data.
+    _lastAutoSyncAt = Date.now();
   }
 }
 
@@ -239,7 +254,14 @@ export async function connectAndPrepare() {
  */
 export async function resolveConflict(choice, remote, etag) {
   if (choice === "replace") {
-    await applySnapshot(remote);
+    // Wholesale adopt Drive's copy, discarding this device's data.
+    _applying = true;
+    try {
+      await applySnapshot(remote);
+    } finally {
+      _applying = false;
+    }
+    _lastAutoSyncAt = Date.now();
     const localAfter = await buildSnapshot();
     const now = new Date().toISOString();
     await updateSettings({
@@ -267,6 +289,18 @@ const CHANGE_DEBOUNCE_MS = 4_000;
 let _lastAutoSyncAt = 0;
 let _changeTimer = null;
 let _pollTimer = null;
+let _retryTimer = null;
+
+// Within the post-sync buffer we DEFER (not drop) pending work: schedule a
+// single retry once the buffer elapses, so a change made right after a sync
+// still syncs promptly instead of waiting for the next focus/poll.
+function scheduleRetry(ms) {
+  if (_retryTimer || _isSyncing) return;
+  _retryTimer = setTimeout(() => {
+    _retryTimer = null;
+    maybeAutoSync();
+  }, ms);
+}
 
 /**
  * The gate every AUTOMATIC trigger runs through. It only contacts Drive (and
@@ -282,7 +316,12 @@ async function maybeAutoSync() {
   // data change. A user-triggered "Sync now" or reconnect clears this.
   if (_needsReauth) return;
   const now = Date.now();
-  if (now - _lastAutoSyncAt < AUTO_SYNC_COOLDOWN_MS) return;
+  const withinBuffer = AUTO_SYNC_COOLDOWN_MS - (now - _lastAutoSyncAt);
+  if (withinBuffer > 0) {
+    // Still inside the post-sync buffer - come back once it's elapsed.
+    scheduleRetry(withinBuffer + 50);
+    return;
+  }
   if (!(await isConnected())) return;
 
   const s = await readSettings();
@@ -304,6 +343,9 @@ async function maybeAutoSync() {
  * nudge a sync explicitly; DB table hooks below call it automatically.
  */
 export function notifyDataChanged() {
+  // Ignore the writes a sync makes while applying merged data - they're not a
+  // user edit and must not schedule another sync (#6).
+  if (_applying) return;
   if (_changeTimer) clearTimeout(_changeTimer);
   _changeTimer = setTimeout(() => {
     _changeTimer = null;

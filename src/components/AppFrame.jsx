@@ -9,6 +9,7 @@ import { AddEntrySheet } from "./AddEntrySheet.jsx";
 import { GroupForm } from "./GroupForm.jsx";
 import { SelectionBar } from "./SelectionBar.jsx";
 import { ApplyCreditSheet } from "./ApplyCreditSheet.jsx";
+import { WalkthroughTour } from "./WalkthroughTour.jsx";
 import { useApp } from "../app/AppContext.jsx";
 import { useSettings, usePeopleMap } from "../db/hooks.js";
 import { setFormatConfig } from "../lib/format.js";
@@ -113,6 +114,7 @@ export function AppFrame() {
 
       <SelectionBar />
       <ConfirmModal />
+      <WalkthroughTour />
       <Toasts />
     </>
   );

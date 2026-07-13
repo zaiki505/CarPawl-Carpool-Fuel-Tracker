@@ -64,16 +64,21 @@ export async function buildSnapshot() {
 }
 
 /**
- * Overwrite the local DB with a merged snapshot. Each synced table is replaced
- * wholesale (clear + bulkPut) so that records the merge excluded - because a
- * remote device tombstoned them - are removed here too. The tombstone log is
- * likewise replaced with the merged/pruned set, dropping obsolete tombstones.
+ * Write a snapshot into the local DB.
  *
- * Single-user, eventual-consistency assumption: kept intentionally simple. A
- * local write landing between buildSnapshot() and applySnapshot() could be
- * overwritten; callers keep the round-trip short and re-sync on the next tick.
+ * Two modes:
+ *  - wholesale (default): clear + bulkPut each table, so the DB ends up EXACTLY
+ *    matching the snapshot. Used for "replace with Drive's copy" and first sync.
+ *  - merge (`{ wholesale: false }`): bulkPut the merged rows and delete ONLY the
+ *    ids the merge tombstoned - never a blanket clear. This is what the normal
+ *    sync uses so a row the user creates between buildSnapshot() and here isn't
+ *    wiped (which used to lose or "fight" a change made mid-sync), and because
+ *    every put is keyed by id it can never duplicate a record. Deletes still
+ *    propagate because a real merge always carries a tombstone for each removal.
+ *
+ * The tombstone log is always replaced with the merged/pruned set.
  */
-export async function applySnapshot(snap) {
+export async function applySnapshot(snap, { wholesale = true } = {}) {
   if (!snap) return;
   await db.transaction(
     "rw",
@@ -86,9 +91,18 @@ export async function applySnapshot(snap) {
     db.settings,
     async () => {
       for (const t of SYNC_TABLES) {
-        await db[t].clear();
+        if (wholesale) await db[t].clear();
         const rows = snap[t] || [];
         if (rows.length) await db[t].bulkPut(rows);
+      }
+      if (!wholesale) {
+        // Remove exactly what the merge tombstoned, per table - not the whole
+        // table - so concurrent local inserts survive.
+        const dels = snap.deletions || [];
+        for (const t of SYNC_TABLES) {
+          const ids = dels.filter((d) => d.table === t).map((d) => d.id);
+          if (ids.length) await db[t].bulkDelete(ids);
+        }
       }
       await db.deletions.clear();
       if (snap.deletions?.length) await db.deletions.bulkPut(snap.deletions);

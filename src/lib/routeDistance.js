@@ -17,7 +17,7 @@ export class RouteDistanceError extends Error {
 }
 
 /** Resolve a place name to { lat, lon, label } via Nominatim (best match). */
-async function geocode(query) {
+export async function geocodePlace(query) {
   const q = String(query || "").trim();
   if (!q) throw new RouteDistanceError("Enter a place.");
   const url = `${NOMINATIM}?q=${encodeURIComponent(q)}&format=json&limit=1`;
@@ -41,12 +41,35 @@ async function geocode(query) {
 }
 
 /**
- * Driving distance between two place names (A -> B).
- * @returns {Promise<{ km: number, from: string, to: string }>}
- * @throws {RouteDistanceError} with a user-facing message on any failure.
+ * Typeahead suggestions for a partial place name (#2). Best-effort: returns an
+ * empty list on a short query, no matches, or any network/parse error - it
+ * never throws, so a flaky lookup just shows no suggestions.
+ * @returns {Promise<Array<{ label: string, lat: number, lon: number }>>}
  */
-export async function routeDistanceKm(fromText, toText) {
-  const [from, to] = await Promise.all([geocode(fromText), geocode(toText)]);
+export async function searchPlaces(query, limit = 5) {
+  const q = String(query || "").trim();
+  if (q.length < 3) return [];
+  const url = `${NOMINATIM}?q=${encodeURIComponent(q)}&format=json&limit=${limit}`;
+  try {
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!res.ok) return [];
+    const rows = await res.json();
+    if (!Array.isArray(rows)) return [];
+    return rows
+      .map((r) => ({ label: r.display_name, lat: Number(r.lat), lon: Number(r.lon) }))
+      .filter((r) => r.label && Number.isFinite(r.lat) && Number.isFinite(r.lon));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Driving distance in km between two already-resolved points.
+ * @param {{lat:number, lon:number, label?:string}} from
+ * @param {{lat:number, lon:number, label?:string}} to
+ * @returns {Promise<{ km:number, from:string, to:string }>}
+ */
+export async function drivingDistanceKm(from, to) {
   // OSRM wants lon,lat pairs separated by ';'.
   const coords = `${from.lon},${from.lat};${to.lon},${to.lat}`;
   const url = `${OSRM}/${coords}?overview=false`;
@@ -62,5 +85,14 @@ export async function routeDistanceKm(fromText, toText) {
   if (!(meters > 0)) {
     throw new RouteDistanceError("No driving route between those places.");
   }
-  return { km: meters / 1000, from: from.label, to: to.label };
+  return { km: meters / 1000, from: from.label || "", to: to.label || "" };
+}
+
+/**
+ * Driving distance between two place names (A -> B). Geocodes each, then routes.
+ * @throws {RouteDistanceError} with a user-facing message on any failure.
+ */
+export async function routeDistanceKm(fromText, toText) {
+  const [from, to] = await Promise.all([geocodePlace(fromText), geocodePlace(toText)]);
+  return drivingDistanceKm(from, to);
 }

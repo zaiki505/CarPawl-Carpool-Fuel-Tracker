@@ -80,6 +80,38 @@ describe("applySnapshot", () => {
   });
 });
 
+describe("applySnapshot merge mode (wholesale: false) - #6 robustness", () => {
+  it("keeps a local row missing from the snapshot when it has no tombstone (a mid-sync insert survives)", async () => {
+    const kept = await actions.createPerson("MidSyncAdd");
+    await applySnapshot(
+      remoteSnap({ people: [{ id: "p1", name: "Remote", updatedAt: "2026-06-01T00:00:00Z" }] }),
+      { wholesale: false }
+    );
+    const names = (await db.people.toArray()).map((p) => p.name).sort();
+    expect(names).toEqual(["MidSyncAdd", "Remote"]); // both survive - no wipe
+    expect(await db.people.get(kept.id)).toBeTruthy();
+  });
+
+  it("still deletes rows the merge tombstoned", async () => {
+    const doomed = await actions.createPerson("Doomed");
+    await applySnapshot(
+      remoteSnap({
+        people: [],
+        deletions: [{ table: "people", id: doomed.id, deletedAt: "2026-06-01T00:00:00Z" }],
+      }),
+      { wholesale: false }
+    );
+    expect(await db.people.get(doomed.id)).toBeUndefined();
+  });
+
+  it("never duplicates: applying the same row id twice upserts", async () => {
+    const snap = remoteSnap({ people: [{ id: "p1", name: "Once", updatedAt: "2026-06-01T00:00:00Z" }] });
+    await applySnapshot(snap, { wholesale: false });
+    await applySnapshot(snap, { wholesale: false });
+    expect(await db.people.toArray()).toHaveLength(1);
+  });
+});
+
 describe("device-local settings never travel through sync", () => {
   it("buildSnapshot strips device-local keys but keeps user prefs", async () => {
     await db.settings.put({

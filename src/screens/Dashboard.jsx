@@ -5,22 +5,13 @@ import { useEntryActions } from "../app/useEntryActions.js";
 import {
   totalOwedToYou,
   totalYouOwe,
-  thisMonthConsumption,
   groupBalances,
   balanceForWho,
   share,
-  isSameMonth,
   outstanding,
 } from "../lib/calc.js";
 import { computeFuelSpend, FUEL_PERIODS } from "../lib/fuelSpend.js";
-import {
-  formatMoney,
-  formatMoneyShort,
-  formatLiters,
-  formatDate,
-  monthLabel,
-  isFutureDate,
-} from "../lib/format.js";
+import { formatMoney, formatLiters, monthLabel } from "../lib/format.js";
 import { partitionUpcoming, upcomingWindowDays } from "../lib/upcoming.js";
 import { personName, whoName } from "../lib/names.js";
 import { whoKey, whoEquals, ME } from "../lib/identity.js";
@@ -34,7 +25,7 @@ import { BreakdownSheet } from "../components/BreakdownSheet.jsx";
 import { ChartCarousel } from "../components/LazyChartCarousel.jsx";
 import { DriveReauthBanner } from "../components/DriveReauthBanner.jsx";
 import { UpdateBanner } from "../components/UpdateBanner.jsx";
-import { Wallet, CircleDollarSign, Fuel, Gauge } from "../components/ui/Icons.jsx";
+import { Wallet, CircleDollarSign } from "../components/ui/Icons.jsx";
 
 export function Dashboard() {
   const data = useAllData();
@@ -58,7 +49,6 @@ export function Dashboard() {
 
   const owedToYou = totalOwedToYou(ownedGroups, entriesByGroup, payments);
   const youOwe = totalYouOwe(nonOwnedGroups, entriesByGroup, payments);
-  const consumption = thisMonthConsumption({ ownedGroups, entriesByGroup });
 
   // Fuel-spend card counts only entries in active (non-archived) groups, matching
   // the "to collect" / "to pay" totals above.
@@ -134,30 +124,20 @@ export function Dashboard() {
   }
   function spendRows(period) {
     return data.activeGroups
-      .map((g) => ({
-        g,
-        spend: computeFuelSpend({
+      .map((g) => {
+        const s = computeFuelSpend({
           trips: entriesByGroup[g.id] || [],
           isDriver: (e) => data.groupOwnedMap.get(e.groupId) === true,
           riderSplit: (e) => share(e, ME),
           fuelCost: (e) => e.totalCost,
           period,
-        }).yourSpend,
-      }))
+        });
+        return { g, spend: s.yourSpend, liters: s.liters };
+      })
       .filter((r) => r.spend > 0.005)
       .sort((a, b) => b.spend - a.spend)
-      .map((r) => ({ label: r.g.name, amount: formatMoney(r.spend) }));
-  }
-  function fuelMonthRows() {
-    const rows = [];
-    for (const g of ownedGroups) {
-      for (const e of entriesByGroup[g.id] || []) {
-        if (isSameMonth(e.date) && !isFutureDate(e.date)) {
-          rows.push({ date: e.date, label: e.title || g.name, sublabel: formatDate(e.date), amount: formatLiters(e.totalLiters) });
-        }
-      }
-    }
-    return rows.sort((a, b) => (a.date < b.date ? 1 : -1));
+      // "RMx / y L" per vehicle (#4): cost and the litres pumped side by side.
+      .map((r) => ({ label: r.g.name, amount: `${formatMoney(r.spend)} / ${formatLiters(r.liters)}` }));
   }
 
   let detailSheet = null;
@@ -172,8 +152,6 @@ export function Dashboard() {
       rows: spendRows(detail.period),
       emptyText: "No fuel spend in this period.",
     };
-  else if (detail?.kind === "fuelMonth")
-    detailSheet = { title: "Fuel this month", subtitle: monthLabel(), rows: fuelMonthRows(), emptyText: "No refuels logged this month yet." };
 
   return (
     <div className="app-shell stagger">
@@ -210,18 +188,6 @@ export function Dashboard() {
           entries={spendEntries}
           groupOwnedMap={data.groupOwnedMap}
           onOpenBreakdown={(period) => setDetail({ kind: "spend", period })}
-        />
-        <StatCard
-          wide
-          icon={<Gauge size={13} />}
-          label="Fuel this month"
-          value={formatLiters(consumption.liters)}
-          onClick={() => setDetail({ kind: "fuelMonth" })}
-          hint={
-            consumption.liters > 0
-              ? `${formatMoneyShort(consumption.cost / consumption.liters)}/L avg`
-              : "no refuels yet"
-          }
         />
       </div>
 

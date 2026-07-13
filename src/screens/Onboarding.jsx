@@ -9,11 +9,24 @@ import { useApp } from "../app/AppContext.jsx";
 import { connectAndPrepare, resolveConflict } from "../lib/syncEngine.js";
 import { readBackupFile, restoreFromBackup } from "../lib/backup.js";
 import { Cloud, Upload, Plus, Loader2 } from "../components/ui/Icons.jsx";
+import { ConceptCards } from "../components/ConceptCards.jsx";
+
+// The curated primer shown at the end of a fresh setup - the handful of ideas a
+// newcomer needs, not the full glossary (that lives in Settings > How it works).
+const ONBOARDING_CONCEPTS = [
+  "ownVsCarpool",
+  "distanceSplit",
+  "credit",
+  "upcoming",
+  "recurring",
+  "driveSync",
+];
 
 /* First run (5). Steps: choose how to start (fresh / from Google Drive / from a
-   backup), then add your car, then optionally set currency + default fuel price.
-   The prefs step is skippable. The onboarded flag is only flipped at the very
-   end (or set for you when you pull an existing account from Drive/backup). */
+   backup), then add your car, set currency + default fuel price, then a short
+   concepts primer that leads into the interactive walkthrough. The onboarded
+   flag is only flipped at the very end (or set for you when you pull an existing
+   account from Drive/backup, which skips the teaching steps). */
 export function Onboarding({ onDone }) {
   const [step, setStep] = useState("welcome");
 
@@ -23,7 +36,8 @@ export function Onboarding({ onDone }) {
         <WelcomeStep onFresh={() => setStep("car")} onDone={onDone} />
       )}
       {step === "car" && <CarStep onNext={() => setStep("prefs")} />}
-      {step === "prefs" && <PrefsStep onFinish={onDone} />}
+      {step === "prefs" && <PrefsStep onNext={() => setStep("learn")} />}
+      {step === "learn" && <LearnStep onDone={onDone} />}
     </div>
   );
 }
@@ -151,7 +165,7 @@ function CarStep({ onNext }) {
   );
 }
 
-function PrefsStep({ onFinish }) {
+function PrefsStep({ onNext }) {
   const [currency, setCurrency] = useState(DEFAULTS.currency);
   const [price, setPrice] = useState(String(DEFAULTS.defaultFuelPricePerLiter));
   const [busy, setBusy] = useState(false);
@@ -168,8 +182,8 @@ function PrefsStep({ onFinish }) {
           defaultFuelPricePerLiter: p > 0 ? p : DEFAULTS.defaultFuelPricePerLiter,
         });
       }
-      await markOnboarded();
-      onFinish?.();
+      // Not onboarded yet - the concepts primer + tour come next.
+      onNext?.();
     } catch {
       setBusy(false);
     }
@@ -221,9 +235,67 @@ function PrefsStep({ onFinish }) {
             onClick={() => finish(true)}
             disabled={busy}
           >
-            Save & finish
+            Save & continue
           </button>
         </div>
+      </div>
+    </>
+  );
+}
+
+/* Concepts primer (slides) that closes out a fresh setup, then hands off to the
+   interactive walkthrough. "Continue" finalises onboarding and launches the
+   spotlight tour over the dashboard; "Skip the tour" finalises without it.
+   Either way the user has swiped the primer at their own pace. */
+function LearnStep({ onDone }) {
+  const { startTour } = useApp();
+  const [busy, setBusy] = useState(false);
+
+  async function finish(withTour) {
+    setBusy(true);
+    try {
+      await markOnboarded();
+      if (withTour) startTour();
+      onDone?.();
+    } catch {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <header className="screen-head" style={{ marginTop: "2rem" }}>
+        <div>
+          <p className="screen-head__kicker">Before you dive in</p>
+          <h1 className="screen-head__title">A few quick concepts</h1>
+          <p className="screen-head__sub">
+            Swipe through the basics - it takes about a minute. You can revisit
+            these anytime in Settings.
+          </p>
+        </div>
+      </header>
+
+      <div className="detail-panel">
+        <ConceptCards keys={ONBOARDING_CONCEPTS} />
+      </div>
+
+      <div className="onboard-learn__actions">
+        <button
+          className="cta-primary btn-block"
+          type="button"
+          onClick={() => finish(true)}
+          disabled={busy}
+        >
+          Continue
+        </button>
+        <button
+          className="onboard-skip-link"
+          type="button"
+          onClick={() => finish(false)}
+          disabled={busy}
+        >
+          Skip the tour
+        </button>
       </div>
     </>
   );

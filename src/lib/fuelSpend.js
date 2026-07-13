@@ -99,6 +99,7 @@ export function computeFuelSpend({
   isDriver,
   riderSplit,
   fuelCost = (t) => t.fuelCost,
+  fuelLiters = (t) => t.totalLiters,
   period = "month",
   ref = new Date(),
 }) {
@@ -128,6 +129,11 @@ export function computeFuelSpend({
   );
   const yourSpend = round2(asDriver + asRider);
   const groupTotal = asDriver; // owned-only scope
+  // Litres of fuel you actually pumped in the period (owned/driver trips only) -
+  // rider trips are someone else's fill-up, so they add money owed, not litres.
+  const liters = round2(
+    curTrips.filter(isDriver).reduce((s, t) => s + (Number(fuelLiters(t)) || 0), 0)
+  );
 
   const prev = previousPeriodRange(period, ref);
   let trend;
@@ -141,6 +147,7 @@ export function computeFuelSpend({
   return {
     groupTotal,
     yourSpend,
+    liters,
     yourSpendBreakdown: { asDriver, asRider },
     trend,
   };
