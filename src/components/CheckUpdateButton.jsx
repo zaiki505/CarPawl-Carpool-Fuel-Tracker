@@ -5,8 +5,7 @@ import { RefreshCw, Download } from "./ui/Icons.jsx";
 
 /* A manual "check for updates" button (Android only). The auto-check banner on
    the home page already nudges when a newer APK lands; this lets the user poll
-   on demand from Settings. Renders nothing on web (checkForUpdate is a no-op
-   there). */
+   on demand from Settings. Renders nothing on web. */
 export function CheckUpdateButton() {
   const [status, setStatus] = useState("idle"); // idle | checking | latest
   const [update, setUpdate] = useState(null);

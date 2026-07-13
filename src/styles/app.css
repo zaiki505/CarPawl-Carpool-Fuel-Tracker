@@ -1562,11 +1562,10 @@ body.light .toast[data-state="info"] { background: rgba(243, 232, 255, 0.9); }
   color: var(--text-primary);
 }
 
-/* Android "update available" banner (dismissable) - same shape as the reauth
-   banner, accented with the brand highlight. */
+/* Android "update available" banner (dismissable) */
 /* Manual "check for updates" pill in the Settings footer (Android only). */
 .check-update {
-  font-style: var(--font-mono);
+  font-family: var(--font-mono);
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -2414,6 +2413,7 @@ button.chip-fact {
   margin-top: 1.1rem;
 }
 .onboard-skip-link {
+  font-family: var(--font-mono);
   background: none;
   border: none;
   color: var(--text-muted);
@@ -2488,6 +2488,7 @@ button.chip-fact {
   margin-top: 0.4rem;
 }
 .tour__skip {
+  font-family: var(--font-mono);
   background: none;
   border: none;
   color: var(--text-muted);
