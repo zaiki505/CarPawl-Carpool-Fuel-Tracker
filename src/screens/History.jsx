@@ -9,7 +9,7 @@ import { Select } from "../components/ui/Select.jsx";
 import { DatePicker } from "../components/ui/DatePicker.jsx";
 import { entryShares, paymentsFor } from "../lib/calc.js";
 import { formatMoney, parseISODate, isFutureDate } from "../lib/format.js";
-import { whoKey, ME } from "../lib/identity.js";
+import { whoKey, ME, person as mkPerson } from "../lib/identity.js";
 import { personName } from "../lib/names.js";
 import { ChevronDown } from "../components/ui/Icons.jsx";
 
@@ -263,6 +263,12 @@ export function History() {
                 applications={data.creditApplications}
                 ownedByMe={data.groupOwnedMap.get(e.groupId)}
                 ownerName={personName(groupMap.get(e.groupId)?.ownerPersonId, peopleMap)}
+                ownerWho={
+                  data.groupOwnedMap.get(e.groupId)
+                    ? ME
+                    : mkPerson(groupMap.get(e.groupId)?.ownerPersonId)
+                }
+                vehicleName={groupMap.get(e.groupId)?.name}
                 fallbackTitle={groupMap.get(e.groupId)?.name}
                 onlyWho={whoFilter.length > 0 ? whoSet : null}
                 onRecordPayment={entryActions.onRecordPayment}

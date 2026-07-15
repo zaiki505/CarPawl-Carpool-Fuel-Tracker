@@ -4,6 +4,7 @@ import { createGroup, createFirstCar, createPerson } from "../db/actions.js";
 import { DEFAULTS, updateSettings } from "../db/db.js";
 import { useApp } from "../app/AppContext.jsx";
 import { Field, Segment, NumberInput } from "./ui/Primitives.jsx";
+import { InfoTip } from "./ui/InfoTip.jsx";
 import { SPLIT_METHOD_OPTIONS, SPLIT_METHOD_HINTS } from "../lib/splitMethods.js";
 import { haptic } from "../lib/haptics.js";
 import { Plus, Check, Car, User, PawPrint } from "./ui/Icons.jsx";
@@ -30,12 +31,18 @@ export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false,
 
   const askOwnership = mode !== "onboard";
 
+  // The name field just gets a live default via its PLACEHOLDER (see below) -
+  // picking an owner only sets the owner, it never touches what you've typed (#7).
+  function pickOwner(person) {
+    setOwnerPersonId(person.id);
+  }
+
   async function addPerson() {
     const nm = newPersonName.trim();
     if (!nm) return;
     try {
       const p = await createPerson(nm);
-      setOwnerPersonId(p.id);
+      pickOwner(p);
       setNewPersonName("");
     } catch (e) {
       toast(e.message, "error");
@@ -43,10 +50,6 @@ export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false,
   }
 
   async function save() {
-    if (!name.trim()) {
-      toast("Give this car a name.", "error");
-      return;
-    }
     if (askOwnership && ownerType === "person" && !ownerPersonId) {
       toast("Pick who owns this car (or add them).", "error");
       return;
@@ -55,19 +58,22 @@ export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false,
       toast("Fuel efficiency must be greater than 0.", "error");
       return;
     }
+    // Empty name falls back to the placeholder default ("{owner}'s Car", or
+    // "My Car" for your own) so nothing is ever required (#7).
+    const finalName = name.trim() || defaultName;
     setBusy(true);
     try {
       let group;
       if (mode === "onboard") {
         await updateSettings({ defaultSplitMethod: splitMethod });
         group = await createFirstCar({
-          name,
+          name: finalName,
           defaultKmPerLiter: Number(kmpl),
           finishOnboarding: !deferOnboardFinish,
         });
       } else {
         group = await createGroup({
-          name,
+          name: finalName,
           ownerType,
           ownerPersonId: ownerType === "person" ? ownerPersonId : null,
           defaultKmPerLiter: Number(kmpl),
@@ -93,7 +99,16 @@ export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false,
       : isPersonOwned
       ? "Their car's name"
       : "Your car's name";
-  const carNamePlaceholder = isPersonOwned ? "e.g. Dad's Civic" : "e.g. My Myvi";
+  // The default name if the field is left blank: "{owner}'s Car" for a carpool
+  // (once an owner is picked), or "My Car" for your own vehicle (#7).
+  const ownerName = people.find((p) => p.id === ownerPersonId)?.name || "";
+  const defaultName = isPersonOwned
+    ? ownerName
+      ? `${ownerName}'s Car`
+      : "Their Car"
+    : "My Car";
+  // Show that default as the placeholder so it doubles as "leave blank to use this".
+  const carNamePlaceholder = isPersonOwned && !ownerName ? "e.g. Dad's Civic" : defaultName;
 
   return (
     <div className="field-grid">
@@ -108,7 +123,7 @@ export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false,
         >
           <Segment
             value={ownerType}
-            onChange={setOwnerType}
+            onChange={(v) => setOwnerType(v)}
             options={[
               {
                 value: "me",
@@ -145,7 +160,7 @@ export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false,
                     type="button"
                     className="pick-chip"
                     aria-pressed={ownerPersonId === p.id}
-                    onClick={() => setOwnerPersonId(p.id)}
+                    onClick={() => pickOwner(p)}
                   >
                     {ownerPersonId === p.id && <Check size={13} />}
                     {p.name}
@@ -185,7 +200,12 @@ export function GroupForm({ mode = "create", onDone, deferOnboardFinish = false,
       </Field>
 
       <Field
-        label="Fuel efficiency (km/L)"
+        label={
+          <>
+            Fuel efficiency (km/L){" "}
+            <InfoTip text="Most cars average about 12 km/L (~8 L/100km) - that's the default. For your car's exact figure, check its trip computer/dashboard or search your model online." />
+          </>
+        }
         hint="Used to estimate distance/liters/cost from whichever value you enter. You can fine-tune it any time."
       >
         <NumberInput value={kmpl} onChange={setKmpl} placeholder="12" step="0.1" min="0" />

@@ -86,10 +86,40 @@ function Cap({ x, y, children, color = MUT, size = 9.5, anchor = "middle" }) {
   );
 }
 
-function Frame({ children }) {
+// A little 4-point sparkle, like the neon mockups.
+function Sparkle({ cx, cy, r = 3.5, color = ACC }) {
+  return (
+    <path
+      d={`M ${cx} ${cy - r} C ${cx + r * 0.15} ${cy - r * 0.15}, ${cx + r * 0.15} ${cy - r * 0.15}, ${cx + r} ${cy} C ${cx + r * 0.15} ${cy + r * 0.15}, ${cx + r * 0.15} ${cy + r * 0.15}, ${cx} ${cy + r} C ${cx - r * 0.15} ${cy + r * 0.15}, ${cx - r * 0.15} ${cy + r * 0.15}, ${cx - r} ${cy} C ${cx - r * 0.15} ${cy - r * 0.15}, ${cx - r * 0.15} ${cy - r * 0.15}, ${cx} ${cy - r} Z`}
+      style={{ fill: color, opacity: 0.75 }}
+    />
+  );
+}
+
+/* Every illustration sits in this frame: a self-coloured neon GLOW filter (each
+   stroke/fill blooms in its own colour) plus a few sparkle accents, to match the
+   glowing mockup style (#0). Duplicate filter ids across the 11 SVGs are fine -
+   each is identical, so every `url(#cglow)` resolves to the same effect. */
+function Frame({ children, sparkles = true }) {
   return (
     <svg viewBox="0 0 240 118" className="concept-art" role="img" aria-hidden="true">
-      {children}
+      <defs>
+        <filter id="cglow" x="-25%" y="-25%" width="150%" height="150%">
+          <feGaussianBlur stdDeviation="1.1" result="b" />
+          <feMerge>
+            <feMergeNode in="b" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      {sparkles && (
+        <g style={{ opacity: 0.7 }}>
+          <Sparkle cx={16} cy={20} r={3} color={MUT} />
+          <Sparkle cx={226} cy={26} r={4} color={ACC} />
+          <Sparkle cx={222} cy={98} r={2.6} color={MUT} />
+        </g>
+      )}
+      <g filter="url(#cglow)">{children}</g>
     </svg>
   );
 }
@@ -123,18 +153,20 @@ export const CONCEPT_ART = {
 
   distanceSplit: () => (
     <Frame>
+      {/* Route drawn so each pin's tip sits exactly on the line (T reflects the
+          previous control point, so it passes through the pin bases). */}
       <path
-        d="M 24 78 C 70 40, 120 100, 170 58 S 220 40, 224 46"
+        d="M 24 84 Q 54 74 86 66 T 148 54 T 208 46"
         style={{ fill: "none", stroke: LINE, strokeWidth: 2, strokeDasharray: "3 5" }}
       />
-      <CarGlyph cx={30} cy={82} w={38} color={ACC} />
-      <Pin cx={92} cy={70} color={ACC} />
-      <Pin cx={158} cy={58} color={ACC} />
-      <Pin cx={214} cy={48} color={ACC} />
-      <Cap x={92} y={92}>15 km</Cap>
-      <Cap x={158} y={92}>35 km</Cap>
-      <Cap x={214} y={92}>25 km</Cap>
-      <Cap x={120} y={112} color={ACC}>Pay for what you rode</Cap>
+      <CarGlyph cx={30} cy={86} w={36} color={ACC} />
+      <Pin cx={86} cy={66} color={ACC} />
+      <Pin cx={148} cy={54} color={ACC} />
+      <Pin cx={208} cy={46} color={ACC} />
+      <Cap x={86} y={82}>15 km</Cap>
+      <Cap x={148} y={70}>35 km</Cap>
+      <Cap x={208} y={62}>25 km</Cap>
+      <Cap x={120} y={113} color={ACC}>Pay for what you rode</Cap>
     </Frame>
   ),
 
@@ -156,14 +188,14 @@ export const CONCEPT_ART = {
 
   customSplit: () => (
     <Frame>
-      <Chip x={16} y={12} label="Fuel" color={ACC} />
-      <Chip x={16} y={40} label="Tolls" color={ACC} />
-      <Chip x={16} y={68} label="Parking" color={ACC} />
-      <Chip x={16} y={96} label="Maint. 10%" color={ACC} />
-      <Arrow x1={120} y={62} x2={158} color={MUT} />
-      <rect x={162} y={44} width={62} height={36} rx={9} style={{ fill: "none", stroke: POS, strokeWidth: 2 }} />
-      <Cap x={193} y={60} color={POS} size={8.5}>TOTAL</Cap>
-      <text x={193} y={74} textAnchor="middle" style={{ fill: POS, fontSize: 12, fontWeight: 800, fontFamily: FONT }}>
+      <Chip x={16} y={8} label="Fuel" color={ACC} />
+      <Chip x={16} y={34} label="Tolls" color={ACC} />
+      <Chip x={16} y={60} label="Parking" color={ACC} />
+      <Chip x={16} y={86} label="Maint. 10%" color={ACC} />
+      <Arrow x1={120} y={58} x2={158} color={MUT} />
+      <rect x={162} y={40} width={62} height={36} rx={9} style={{ fill: "none", stroke: POS, strokeWidth: 2 }} />
+      <Cap x={193} y={56} color={POS} size={8.5}>TOTAL</Cap>
+      <text x={193} y={70} textAnchor="middle" style={{ fill: POS, fontSize: 12, fontWeight: 800, fontFamily: FONT }}>
         RM
       </text>
     </Frame>
@@ -171,34 +203,37 @@ export const CONCEPT_ART = {
 
   maintenanceMarkup: () => (
     <Frame>
-      <rect x={40} y={70} width={70} height={26} rx={7} style={{ fill: "none", stroke: ACC, strokeWidth: 2 }} />
-      <Cap x={75} y={87} color={ACC}>Fuel</Cap>
-      <rect x={40} y={44} width={70} height={22} rx={7} style={{ fill: "none", stroke: POS, strokeWidth: 2 }} />
-      <Cap x={75} y={59} color={POS}>+10%</Cap>
-      <Arrow x1={120} y={64} x2={158} color={MUT} />
+      {/* a centered gauge sweeping up, with a "+10%" badge above it */}
       <path
-        d="M 165 92 A 36 36 0 0 1 223 92"
-        style={{ fill: "none", stroke: LINE, strokeWidth: 3, strokeLinecap: "round" }}
+        d="M 80 88 A 40 40 0 0 1 160 88"
+        style={{ fill: "none", stroke: LINE, strokeWidth: 5, strokeLinecap: "round" }}
       />
       <path
-        d="M 165 92 A 36 36 0 0 1 200 57"
-        style={{ fill: "none", stroke: POS, strokeWidth: 3, strokeLinecap: "round" }}
+        d="M 80 88 A 40 40 0 0 1 120 48"
+        style={{ fill: "none", stroke: POS, strokeWidth: 5, strokeLinecap: "round" }}
       />
-      <line x1={194} y1={92} x2={206} y2={66} style={{ stroke: ACC, strokeWidth: 2.5, strokeLinecap: "round" }} />
-      <Cap x={194} y={112} color={POS}>Recover wear</Cap>
+      <line x1={120} y1={88} x2={143} y2={60} style={{ stroke: ACC, strokeWidth: 3, strokeLinecap: "round" }} />
+      <circle cx={120} cy={88} r={5} style={{ fill: ACC }} />
+      <rect x={95} y={14} width={50} height={22} rx={11} style={{ fill: "none", stroke: POS, strokeWidth: 2 }} />
+      <text x={120} y={30} textAnchor="middle" style={{ fill: POS, fontSize: 12, fontWeight: 800, fontFamily: FONT }}>
+        +10%
+      </text>
+      <Cap x={120} y={110}>Extra % on top of fuel</Cap>
     </Frame>
   ),
 
   credit: () => (
     <Frame>
-      <rect x={64} y={44} width={112} height={54} rx={12} style={{ fill: "none", stroke: ACC, strokeWidth: 2 }} />
-      <rect x={64} y={58} width={112} height={12} style={{ fill: ACC, opacity: 0.25 }} />
-      <circle cx={150} cy={80} r={9} style={{ fill: "none", stroke: ACC, strokeWidth: 2 }} />
-      <text x={150} y={84} textAnchor="middle" style={{ fill: ACC, fontSize: 11, fontWeight: 800, fontFamily: FONT }}>
+      {/* a centered wallet with a green "+" coin (the overpayment) dropping in */}
+      <rect x={80} y={44} width={80} height={52} rx={10} style={{ fill: "none", stroke: ACC, strokeWidth: 2 }} />
+      <rect x={80} y={44} width={80} height={13} rx={10} style={{ fill: ACC, opacity: 0.18 }} />
+      <rect x={132} y={62} width={24} height={17} rx={5} style={{ fill: "none", stroke: ACC, strokeWidth: 2 }} />
+      <circle cx={143} cy={70} r={2.5} style={{ fill: ACC }} />
+      <circle cx={120} cy={32} r={13} style={{ fill: "var(--surface-chip)", stroke: POS, strokeWidth: 2 }} />
+      <text x={120} y={38} textAnchor="middle" style={{ fill: POS, fontSize: 16, fontWeight: 800, fontFamily: FONT }}>
         +
       </text>
-      <Cap x={120} y={30} color={POS}>Overpaid = credit</Cap>
-      <Cap x={120} y={114}>Held until you use it</Cap>
+      <Cap x={120} y={113} color={POS}>Overpaid, held as credit</Cap>
     </Frame>
   ),
 
@@ -216,56 +251,84 @@ export const CONCEPT_ART = {
     </Frame>
   ),
 
+  // Remade (#6): a timeline reading left-to-right - "now" on a solid past line,
+  // a dashed future stretch, and the pending trip (a fuel drop) waiting ahead.
   upcoming: () => (
     <Frame>
-      <rect x={70} y={26} width={100} height={72} rx={10} style={{ fill: "none", stroke: ACC, strokeWidth: 2 }} />
-      <line x1={70} y1={44} x2={170} y2={44} style={{ stroke: ACC, strokeWidth: 2 }} />
-      <line x1={92} y1={20} x2={92} y2={34} style={{ stroke: ACC, strokeWidth: 3, strokeLinecap: "round" }} />
-      <line x1={148} y1={20} x2={148} y2={34} style={{ stroke: ACC, strokeWidth: 3, strokeLinecap: "round" }} />
-      <circle cx={140} cy={72} r={13} style={{ fill: "var(--surface-chip)", stroke: POS, strokeWidth: 2 }} />
-      <path d="M 140 65 L 140 72 L 146 76" style={{ fill: "none", stroke: POS, strokeWidth: 2, strokeLinecap: "round" }} />
-      <circle cx={95} cy={66} r={4} style={{ fill: MUT }} />
-      <circle cx={112} cy={66} r={4} style={{ fill: MUT }} />
-      <Cap x={120} y={114}>Counts once its date arrives</Cap>
+      <line x1={22} y1={60} x2={116} y2={60} style={{ stroke: MUT, strokeWidth: 2 }} />
+      <line
+        x1={116}
+        y1={60}
+        x2={218}
+        y2={60}
+        style={{ stroke: ACC, strokeWidth: 2, strokeDasharray: "4 5" }}
+      />
+      <circle cx={116} cy={60} r={6} style={{ fill: "var(--surface-chip)", stroke: ACC, strokeWidth: 2.5 }} />
+      <Cap x={116} y={44} color={ACC}>now</Cap>
+      <circle cx={192} cy={60} r={18} style={{ fill: "var(--surface-chip)", stroke: POS, strokeWidth: 2 }} />
+      <path
+        d="M 192 50 C 200 59, 200 66, 192 71 C 184 66, 184 59, 192 50 Z"
+        style={{ fill: "none", stroke: POS, strokeWidth: 2 }}
+      />
+      <Cap x={192} y={90} color={POS}>upcoming</Cap>
+      <Cap x={120} y={113}>Counts once its date arrives</Cap>
     </Frame>
   ),
 
   prepay: () => (
     <Frame>
-      <rect x={64} y={22} width={92} height={68} rx={10} style={{ fill: "none", stroke: ACC, strokeWidth: 2 }} />
-      <line x1={64} y1={40} x2={156} y2={40} style={{ stroke: ACC, strokeWidth: 2 }} />
-      <circle cx={150} cy={78} r={16} style={{ fill: "var(--surface-chip)", stroke: POS, strokeWidth: 2 }} />
-      <text x={150} y={83} textAnchor="middle" style={{ fill: POS, fontSize: 12, fontWeight: 800, fontFamily: FONT }}>
+      {/* calendar (with binder tabs) centred on x=120, coin nested in its corner */}
+      <line x1={96} y1={16} x2={96} y2={28} style={{ stroke: ACC, strokeWidth: 3, strokeLinecap: "round" }} />
+      <line x1={144} y1={16} x2={144} y2={28} style={{ stroke: ACC, strokeWidth: 3, strokeLinecap: "round" }} />
+      <rect x={74} y={24} width={92} height={66} rx={10} style={{ fill: "none", stroke: ACC, strokeWidth: 2 }} />
+      <line x1={74} y1={42} x2={166} y2={42} style={{ stroke: ACC, strokeWidth: 2 }} />
+      <circle cx={150} cy={82} r={14} style={{ fill: "var(--surface-chip)", stroke: POS, strokeWidth: 2 }} />
+      <text x={150} y={86} textAnchor="middle" style={{ fill: POS, fontSize: 11, fontWeight: 800, fontFamily: FONT }}>
         RM
       </text>
-      <Cap x={100} y={112}>Pay early, held till the day</Cap>
+      <Cap x={120} y={112}>Pay early, held till the day</Cap>
     </Frame>
   ),
 
   recurring: () => (
     <Frame>
       <path
-        d="M 156 58 A 36 36 0 1 1 148 34"
+        d="M 156 56 A 36 36 0 1 1 148 32"
         style={{ fill: "none", stroke: ACC, strokeWidth: 3, strokeLinecap: "round" }}
       />
-      <path d="M 150 20 L 152 36 L 136 34 Z" style={{ fill: ACC }} />
-      <rect x={98} y={44} width={44} height={30} rx={6} style={{ fill: "none", stroke: MUT, strokeWidth: 2 }} />
-      <line x1={98} y1={54} x2={142} y2={54} style={{ stroke: MUT, strokeWidth: 2 }} />
-      <Cap x={120} y={112}>Auto-schedules the next one</Cap>
+      <path d="M 150 18 L 152 34 L 136 32 Z" style={{ fill: ACC }} />
+      <rect x={98} y={40} width={44} height={30} rx={6} style={{ fill: "none", stroke: MUT, strokeWidth: 2 }} />
+      <line x1={98} y1={50} x2={142} y2={50} style={{ stroke: MUT, strokeWidth: 2 }} />
+      <Cap x={120} y={113}>Auto-schedules the next one</Cap>
     </Frame>
   ),
 
+  // Remade (#6): your Drive cloud with a "synced" check badge, feeding a phone
+  // and a laptop - one backup, every device up to date.
   driveSync: () => (
     <Frame>
       <path
-        d="M 92 58 a 20 20 0 0 1 39 -6 a 16 16 0 0 1 3 32 h -40 a 17 17 0 0 1 -2 -26 Z"
+        d="M 99 42 a 20 20 0 0 1 39 -6 a 16 16 0 0 1 3 32 h -40 a 17 17 0 0 1 -2 -26 Z"
+        style={{ fill: ACC, opacity: 0.12 }}
+      />
+      <path
+        d="M 99 42 a 20 20 0 0 1 39 -6 a 16 16 0 0 1 3 32 h -40 a 17 17 0 0 1 -2 -26 Z"
         style={{ fill: "none", stroke: ACC, strokeWidth: 2, strokeLinejoin: "round" }}
       />
-      <rect x={24} y={70} width={34} height={24} rx={4} style={{ fill: "none", stroke: MUT, strokeWidth: 2 }} />
-      <rect x={182} y={70} width={34} height={24} rx={4} style={{ fill: "none", stroke: MUT, strokeWidth: 2 }} />
-      <Arrow x1={62} y={82} x2={92} color={POS} />
-      <Arrow x1={178} y={82} x2={148} color={POS} />
-      <Cap x={120} y={114}>Synced across your devices</Cap>
+      <circle cx={142} cy={32} r={11} style={{ fill: "var(--surface-chip)", stroke: POS, strokeWidth: 2 }} />
+      <path
+        d="M 137 32 l 3.5 4 l 6 -8"
+        style={{ fill: "none", stroke: POS, strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" }}
+      />
+      {/* phone (left) - raised a little so there's a clear gap above the caption */}
+      <rect x={34} y={72} width={26} height={24} rx={4} style={{ fill: "none", stroke: MUT, strokeWidth: 2 }} />
+      <line x1={34} y1={90} x2={60} y2={90} style={{ stroke: MUT, strokeWidth: 2 }} />
+      {/* laptop (right) */}
+      <rect x={182} y={74} width={30} height={20} rx={3} style={{ fill: "none", stroke: MUT, strokeWidth: 2 }} />
+      <line x1={178} y1={98} x2={216} y2={98} style={{ stroke: MUT, strokeWidth: 2, strokeLinecap: "round" }} />
+      <Arrow x1={92} y={78} x2={64} color={POS} />
+      <Arrow x1={148} y={78} x2={178} color={POS} />
+      <Cap x={120} y={115}>Synced across your devices</Cap>
     </Frame>
   ),
 };

@@ -24,17 +24,20 @@ export function CheckUpdateButton() {
     }
   }
 
-  // A newer release was found - offer the APK download link directly.
+  // A newer release was found. Open the GitHub RELEASE PAGE (not the direct APK
+  // asset): the in-app WebView can't follow GitHub's redirecting binary download
+  // - it silently fails, and the biometric lock re-locking on background kills
+  // it too (#3/#4). The release page opens in the system browser, where the user
+  // taps the APK to download it reliably.
   if (update) {
     return (
-      <a
+      <button
+        type="button"
         className="check-update check-update--found"
-        href={update.apkUrl}
-        target="_blank"
-        rel="noreferrer"
+        onClick={() => window.open(update.releaseUrl, "_blank")}
       >
-        <Download size={13} /> Update to v{update.latestVersion}
-      </a>
+        <Download size={13} /> Get v{update.latestVersion} on GitHub
+      </button>
     );
   }
 

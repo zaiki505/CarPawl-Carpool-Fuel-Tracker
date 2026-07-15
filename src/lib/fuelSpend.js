@@ -129,10 +129,19 @@ export function computeFuelSpend({
   );
   const yourSpend = round2(asDriver + asRider);
   const groupTotal = asDriver; // owned-only scope
-  // Litres of fuel you actually pumped in the period (owned/driver trips only) -
-  // rider trips are someone else's fill-up, so they add money owed, not litres.
+  // Litres attributable to you in the period, to parallel `yourSpend` (#8):
+  //   - own car (driver): the full litres you pumped
+  //   - carpool (rider): your prorated share of the trip's litres, by cost share
+  //     (your rider cost / trip cost), so litres tracks the money you're on the
+  //     hook for rather than fuel someone else paid for.
   const liters = round2(
-    curTrips.filter(isDriver).reduce((s, t) => s + (Number(fuelLiters(t)) || 0), 0)
+    curTrips.reduce((s, t) => {
+      const l = Number(fuelLiters(t)) || 0;
+      if (isDriver(t)) return s + l;
+      const cost = Number(fuelCost(t)) || 0;
+      const myCost = Number(riderSplit(t)) || 0;
+      return s + (cost > 0 ? (l * myCost) / cost : 0);
+    }, 0)
   );
 
   const prev = previousPeriodRange(period, ref);

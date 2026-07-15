@@ -225,25 +225,37 @@ async function nativeLogin(options) {
   return tokenFromNativeResponse(response);
 }
 
+/** Pull an access token straight out of a SocialLogin.refresh() result, if the
+ *  plugin returned one - lets us refresh WITHOUT any login() call (no UI at
+ *  all). Returns null if the result doesn't carry a usable token. */
+function tokenFromRefresh(res) {
+  const r = res?.result || res || {};
+  const tok = r?.accessToken?.token || (typeof r?.accessToken === "string" ? r.accessToken : null);
+  if (typeof tok !== "string" || !tok) return null;
+  _nativeEmail = r?.profile?.email || _nativeEmail;
+  const exp = r?.accessToken?.expires ? Date.parse(r.accessToken.expires) : NaN;
+  return { access_token: tok, expires_at: exp || Date.now() + 50 * 60 * 1000 };
+}
+
 /**
  * Get a native access token.
  *
- * Google Play Services holds the OAuth refresh token internally, so a fresh
- * access token can be minted WITHOUT any UI - even for a background sync. We try
- * that silent path first (`refresh()` + an auto-select login that returns the
- * refreshed token) regardless of `allowInteractive`. Only if the silent path
- * fails do we differ: a user-triggered call (`allowInteractive`) may show the
- * full account chooser; a background call throws DriveAuthError quietly.
+ * SYNC never shows an account chooser (#17): picking a different account than
+ * the connected one yields a token for the wrong Drive and a confusing 401. So
+ * a plain call only ever tries the SILENT path - refresh the stored token, and
+ * only if that fails does it fall back to an auto-select login (which returns
+ * the already-authorized account with no UI when there's a single one). If even
+ * that fails it throws DriveAuthError so the caller can nudge a reconnect.
+ *
+ * The deliberate account chooser lives ONLY behind `forcePicker` (used by
+ * connect()/"Reconnect"), never on the sync path - regardless of allowInteractive.
  */
-async function getNativeToken({ allowInteractive = false, forcePicker = false } = {}) {
+async function getNativeToken({ forcePicker = false } = {}) {
   await ensureNativeInit();
 
-  // Explicit (re)connect: always show the account chooser so the user can pick
-  // or switch accounts, instead of silently reusing the last-used one. Skipping
-  // the silent refresh + auto-select path below is what makes the picker appear.
-  // filterByAuthorizedAccounts:false shows every Google account on the device
-  // (so switching accounts works), autoSelectEnabled:false stops it auto-picking
-  // when there's only one.
+  // Explicit (re)connect: show the chooser so the user can pick / switch
+  // accounts. filterByAuthorizedAccounts:false shows every account on the
+  // device; autoSelectEnabled:false stops it auto-picking a single one.
   if (forcePicker) {
     return nativeLogin({
       scopes: [SCOPE],
@@ -253,35 +265,34 @@ async function getNativeToken({ allowInteractive = false, forcePicker = false } 
     });
   }
 
+  // 1. Silent refresh - if the plugin hands back a token here, we're done with
+  //    zero UI (the ideal path for a routine or manual sync).
   try {
-    // Ask Play Services to refresh the access token from its stored refresh
-    // token (silent). Best-effort: the auto-select login below also force-
-    // refreshes, so a missing/failed refresh() isn't fatal.
-    try {
-      await SocialLogin.refresh({ provider: "google", options: { scopes: [SCOPE] } });
-    } catch {
-      // ignore - fall through to the auto-select login
-    }
-    // Retrieve the (now fresh) token. For a single previously-authorized account
-    // Credential Manager returns it with no UI, so this stays silent.
+    const refreshed = await SocialLogin.refresh({
+      provider: "google",
+      options: { scopes: [SCOPE] },
+    });
+    const tok = tokenFromRefresh(refreshed);
+    if (tok) return tok;
+  } catch {
+    // fall through to the auto-select login
+  }
+
+  // 2. Auto-select login: returns the single already-authorized account with no
+  //    UI. It can surface a picker of AUTHORIZED accounts if several exist, but
+  //    it never opens the full "choose any account" flow - that only happens via
+  //    forcePicker above, so sync can't land on the wrong account.
+  try {
     return await nativeLogin({
       scopes: [SCOPE],
       forceRefreshToken: true,
-      style: "bottom",
       filterByAuthorizedAccounts: true,
       autoSelectEnabled: true,
     });
   } catch (e) {
-    if (e instanceof DriveAuthError && /cancel/i.test(e.message)) throw e;
-    if (!allowInteractive) {
-      // Background: never show a chooser - fail quietly so the caller can nudge
-      // a reconnect instead.
-      throw e instanceof DriveAuthError
-        ? e
-        : new DriveAuthError("Drive silent refresh failed - reconnect from Settings.");
-    }
-    // User-triggered: fall back to a full account chooser.
-    return nativeLogin({ scopes: [SCOPE], style: "standard" });
+    throw e instanceof DriveAuthError
+      ? e
+      : new DriveAuthError("Couldn't sign in to Google Drive silently - reconnect from Settings.");
   }
 }
 
@@ -300,7 +311,9 @@ export async function getToken({ allowInteractive = false, forceRefresh = false 
     if (restored) return restored;
   }
   if (Capacitor.isNativePlatform()) {
-    _token = await getNativeToken({ allowInteractive });
+    // Sync always takes the silent path (no chooser); allowInteractive is
+    // intentionally ignored on native so a sync can't land on the wrong account.
+    _token = await getNativeToken();
     await persistToken(_token);
     return _token;
   }
@@ -374,7 +387,7 @@ export async function connect() {
   if (Capacitor.isNativePlatform()) {
     // Force the account chooser so a reconnect lets the user pick/switch accounts
     // rather than silently defaulting to the previously signed-in one.
-    _token = await getNativeToken({ allowInteractive: true, forcePicker: true });
+    _token = await getNativeToken({ forcePicker: true });
     await persistToken(_token);
     await updateSettings({
       gdriveConnected: true,

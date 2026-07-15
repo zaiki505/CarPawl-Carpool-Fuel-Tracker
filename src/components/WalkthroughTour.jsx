@@ -35,7 +35,7 @@ const STEPS = [
   {
     selector: null,
     title: "You're all set",
-    body: "You can revisit these concepts anytime in Settings → How it works. Happy tracking!",
+    body: "You can revisit these concepts anytime in Settings → About CarPawl. Happy tracking!",
   },
 ];
 

@@ -14,7 +14,7 @@ import { computeFuelSpend, FUEL_PERIODS } from "../lib/fuelSpend.js";
 import { formatMoney, formatLiters, monthLabel } from "../lib/format.js";
 import { partitionUpcoming, upcomingWindowDays } from "../lib/upcoming.js";
 import { personName, whoName } from "../lib/names.js";
-import { whoKey, whoEquals, ME } from "../lib/identity.js";
+import { whoKey, whoEquals, ME, person as mkPerson } from "../lib/identity.js";
 import { PickTripSheet } from "../components/PickTripSheet.jsx";
 import { StatCard, SectionHead, EmptyState } from "../components/ui/Primitives.jsx";
 import { ScreenLoading } from "../components/ui/ScreenLoading.jsx";
@@ -47,8 +47,8 @@ export function Dashboard() {
     entries,
   } = data;
 
-  const owedToYou = totalOwedToYou(ownedGroups, entriesByGroup, payments);
-  const youOwe = totalYouOwe(nonOwnedGroups, entriesByGroup, payments);
+  const owedToYou = totalOwedToYou(ownedGroups, entriesByGroup, payments, data.creditApplications);
+  const youOwe = totalYouOwe(nonOwnedGroups, entriesByGroup, payments, data.creditApplications);
 
   // Fuel-spend card counts only entries in active (non-archived) groups, matching
   // the "to collect" / "to pay" totals above.
@@ -65,7 +65,7 @@ export function Dashboard() {
   function collectRows() {
     const rows = [];
     for (const g of ownedGroups) {
-      for (const row of groupBalances(entriesByGroup[g.id] || [], payments, { excludeMe: true })) {
+      for (const row of groupBalances(entriesByGroup[g.id] || [], payments, { excludeMe: true, applications: data.creditApplications })) {
         if (row.owed <= 0.005) continue;
         rows.push({
           label: whoName(row.who, peopleMap),
@@ -82,7 +82,12 @@ export function Dashboard() {
   }
   function payRows() {
     return nonOwnedGroups
-      .map((g) => ({ g, owed: balanceForWho(entriesByGroup[g.id] || [], ME, payments).owed }))
+      .map((g) => ({
+        g,
+        owed: balanceForWho(entriesByGroup[g.id] || [], ME, payments, {
+          applications: data.creditApplications,
+        }).owed,
+      }))
       .filter((r) => r.owed > 0.005)
       .sort((a, b) => b.owed - a.owed)
       .map((r) => ({
@@ -272,6 +277,12 @@ export function Dashboard() {
               peopleMap={peopleMap}
               ownedByMe={data.groupOwnedMap.get(e.groupId)}
               ownerName={personName(data.groupMap.get(e.groupId)?.ownerPersonId, peopleMap)}
+              ownerWho={
+                data.groupOwnedMap.get(e.groupId)
+                  ? ME
+                  : mkPerson(data.groupMap.get(e.groupId)?.ownerPersonId)
+              }
+              vehicleName={data.groupMap.get(e.groupId)?.name}
               fallbackTitle={data.groupMap.get(e.groupId)?.name}
               applications={data.creditApplications}
               onReverseCredit={entryActions.onReverseCredit}

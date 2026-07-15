@@ -4,7 +4,6 @@ import { useApp } from "../app/AppContext.jsx";
 import { GroupCard } from "../components/GroupCard.jsx";
 import { EmptyState } from "../components/ui/Primitives.jsx";
 import { ScreenLoading } from "../components/ui/ScreenLoading.jsx";
-import { Plus } from "../components/ui/Icons.jsx";
 
 /* Groups screen (7.2) - My Vehicle(s) and Carpools in two separate sections.
 "+ Add group" opens the ownership aware create sheet. */
@@ -22,14 +21,6 @@ export function Groups() {
           <p className="screen-head__kicker">Your vehicles & carpools</p>
           <h1 className="screen-head__title">Vehicles</h1>
         </div>
-        <button
-          className="cta-contrast"
-          type="button"
-          onClick={() => openSheet({ type: "createGroup" })}
-          style={{ padding: "0.6rem 1rem", whiteSpace: "nowrap" }}
-        >
-          <Plus size={16} /> Add
-        </button>
       </header>
 
       <section className="section-block">

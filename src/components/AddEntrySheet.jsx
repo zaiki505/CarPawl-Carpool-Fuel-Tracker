@@ -214,10 +214,12 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
   const hasMeasured = kmplTouched;
   const totalDistance = totals.totalDistance;
 
-  // Keep non-custom passenger distances synced to the full trip distance.
-  const syncedPassengers = passengers.map((p) =>
-    p.custom ? p : { ...p, distance: totalDistance ? String(round2(totalDistance)) : "" }
-  );
+  // Passengers exactly as typed - the distance input can be left BLANK (#4).
+  const syncedPassengers = passengers;
+  // The distance actually used for the split: what you typed (including an
+  // explicit 0), or the full trip distance when the field is left blank. The
+  // input itself keeps showing blank so you can clear it.
+  const effDist = (p) => (p.custom ? parseNum(p.distance) || 0 : totalDistance);
 
   const isDistance = splitMethod === "distance";
   const isDriverComp = splitMethod === "driver_comp";
@@ -241,7 +243,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
       : null,
     passengers: syncedPassengers.map((p) => ({
       who: p.who,
-      distanceAssigned: parseNum(p.distance) || 0,
+      distanceAssigned: effDist(p),
       manualOverride: p.override !== "" && p.override != null ? parseNum(p.override) : null,
     })),
   };
@@ -280,11 +282,11 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
     // "Me" is selectable in any vehicle now. In your own vehicle your share is
     // tracked for reference but never owed to you (18 update).
     if (group) list.push(ME);
-    // In a carpool the owner IS the driver who paid the pump - they can't be a
-    // passenger who owes themselves, so they're not pickable here.
-    const ownerPersonId = group?.ownerType === "person" ? group.ownerPersonId : null;
+    // The carpool owner IS selectable as a passenger too (#6): they paid the
+    // pump, so - exactly like "Me" in a car I own - their share is tracked for
+    // reference but never owed to themselves (calc excludes the owner from
+    // balances; EntryCard renders their row as "covered").
     for (const p of people) {
-      if (p.id === ownerPersonId) continue;
       list.push(mkPerson(p.id));
     }
     return list;
@@ -293,6 +295,15 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
   const selectedKeys = new Set(syncedPassengers.map((p) => whoKey(p.who)));
   const suggested = candidates.filter((w) => usualWhoKeys.has(whoKey(w)));
   const others = candidates.filter((w) => !usualWhoKeys.has(whoKey(w)));
+  // Show at least 3 candidate chips by default (pad from "others" when there
+  // aren't 3 usual riders); the rest hide behind "+ more". Already-selected
+  // people always stay visible so they can be deselected (#5).
+  const allCandidates = [...suggested, ...others];
+  const collapsedCount = Math.max(3, suggested.length);
+  const shownCandidates = showAllPeople
+    ? allCandidates
+    : allCandidates.filter((w, i) => i < collapsedCount || selectedKeys.has(whoKey(w)));
+  const hasMorePax = !showAllPeople && shownCandidates.length < allCandidates.length;
 
   function togglePassenger(who) {
     setPaxEdited(true);
@@ -309,7 +320,9 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
         ...prev,
         {
           who,
-          distance: totalDistance ? String(round2(totalDistance)) : "",
+          // Blank by default (#4): the input shows the full-trip distance as a
+          // placeholder and effDist() uses it until you type a real value.
+          distance: "",
           custom: false,
           override: savedDefault ? String(savedDefault) : "",
         },
@@ -319,9 +332,13 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
 
   function setPassengerDistance(key, value) {
     setPaxEdited(true);
+    // Empty = "use the full trip distance" (custom:false, so effDist() falls
+    // back to the trip total; the field stays visually blank). A typed value -
+    // including an explicit "0" - is taken as-is, so 0 really means 0 km (#4/#7).
+    const custom = value.trim() !== "";
     setPassengers((prev) =>
       prev.map((p) =>
-        whoKey(p.who) === key ? { ...p, distance: value, custom: true } : p
+        whoKey(p.who) === key ? { ...p, distance: value, custom } : p
       )
     );
   }
@@ -429,7 +446,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
 
     const payloadPassengers = syncedPassengers.map((p) => ({
       who: p.who,
-      distanceAssigned: parseNum(p.distance) || 0,
+      distanceAssigned: effDist(p),
       manualOverride:
         isDriverComp && p.override !== "" && p.override != null ? parseNum(p.override) : null,
     }));
@@ -535,7 +552,23 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
       }
       const ok = await askConfirm({
         title: `Apply to ${multiEntries.length} entries?`,
-        body: `This overwrites ${labels.join(", ")} on all ${multiEntries.length} selected entries with the values set here. Their other details stay as they are. This can't be undone.`,
+        // Rich body (#11): show exactly which fields get overwritten as a list.
+        body: (
+          <>
+            <p style={{ margin: "0 0 0.55rem" }}>
+              These fields will be overwritten on all <strong>{multiEntries.length}</strong>{" "}
+              selected entries:
+            </p>
+            <ul className="change-list">
+              {labels.map((l) => (
+                <li key={l}>{l}</li>
+              ))}
+            </ul>
+            <p className="faint" style={{ margin: "0.55rem 0 0", fontSize: "0.8rem" }}>
+              Everything else on each entry stays as it is. This can't be undone.
+            </p>
+          </>
+        ),
         confirmLabel: "Apply to all",
         danger: true,
       });
@@ -865,7 +898,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
                 <Field label="Title (optional)">
                   <input
                     type="text"
-                    placeholder="e.g. Petronas run"
+                    placeholder="e.g. Trip to KL"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                   />
@@ -897,7 +930,10 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
                 <button
                   key={g.id}
                   type="button"
-                  className="pick-chip"
+                  className={
+                    "pick-chip vehicle-chip " +
+                    (g.ownerType === "me" ? "vehicle-chip--mine" : "vehicle-chip--carpool")
+                  }
                   aria-pressed={groupId === g.id}
                   onClick={() => changeGroup(g.id)}
                 >
@@ -1072,7 +1108,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
               }
             >
               <div className="chip-wrap">
-                {[...suggested, ...(showAllPeople ? others : [])].map((who) => (
+                {shownCandidates.map((who) => (
                   <button
                     key={whoKey(who)}
                     type="button"
@@ -1084,7 +1120,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
                     {whoName(who, peopleMap)}
                   </button>
                 ))}
-                {!showAllPeople && others.length > 0 && (
+                {hasMorePax && (
                   <button
                     type="button"
                     className="pick-chip"
@@ -1123,9 +1159,8 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
             <div className="pax-dist-list">
               {syncedPassengers.map((p) => {
                 const key = whoKey(p.who);
-                const full =
-                  totalDistance &&
-                  Math.abs((parseNum(p.distance) || 0) - totalDistance) < 0.01;
+                // Blank field = the whole trip (that's what effDist() uses).
+                const usingFull = !p.custom;
                 return (
                   <div className="pax-dist-row" key={key}>
                     <span className="pax-dist-row__name">
@@ -1134,7 +1169,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
                         {" "}
                         · {formatMoney(shareOfRow(previewEntry, {
                           who: p.who,
-                          distanceAssigned: parseNum(p.distance) || 0,
+                          distanceAssigned: effDist(p),
                         }))}
                       </span>
                     </span>
@@ -1144,10 +1179,11 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
                         inputMode="decimal"
                         min="0"
                         step="1"
+                        placeholder={totalDistance ? String(round2(totalDistance)) : "0"}
                         value={p.distance}
                         onChange={(e) => setPassengerDistance(key, e.target.value)}
                       />
-                      <span className="faint">km {full ? "· full trip" : ""}</span>
+                      <span className="faint">km {usingFull ? "· full trip" : ""}</span>
                     </div>
                   </div>
                 );
@@ -1206,19 +1242,20 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
                   p.override !== "" && p.override != null ? parseNum(p.override) : null;
                 const finalShare = shareOfRow(previewEntry, {
                   who: p.who,
-                  distanceAssigned: parseNum(p.distance) || 0,
+                  distanceAssigned: effDist(p),
                   manualOverride: overrideNum,
+                });
+                // What the share works out to with NO fixed amount - shown as the
+                // input's placeholder so the left-side price is redundant (#10).
+                const autoShare = shareOfRow(previewEntry, {
+                  who: p.who,
+                  distanceAssigned: effDist(p),
+                  manualOverride: null,
                 });
                 return (
                   <div className="pax-dist-row" key={key}>
                     <span className="pax-dist-row__name">
                       {whoName(p.who, peopleMap)}
-                      {isDriverComp && (
-                        <span className="faint" style={{ fontWeight: "normal" }}>
-                          {" "}
-                          · {formatMoney(finalShare)}
-                        </span>
-                      )}
                     </span>
                     {isDriverComp ? (
                       <div className="pax-comp-inputs">
@@ -1229,7 +1266,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
                               inputMode="decimal"
                               min="0"
                               step="1"
-                              placeholder="km"
+                              placeholder={totalDistance ? String(round2(totalDistance)) : "km"}
                               value={p.distance}
                               onChange={(e) => setPassengerDistance(key, e.target.value)}
                               aria-label={`${whoName(p.who, peopleMap)} distance (km)`}
@@ -1243,7 +1280,7 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
                             inputMode="decimal"
                             min="0"
                             step="0.01"
-                            placeholder="Auto"
+                            placeholder={formatMoney(autoShare)}
                             value={p.override}
                             onChange={(e) => setPassengerOverride(key, e.target.value)}
                             aria-label={`${whoName(p.who, peopleMap)} fixed amount (RM)`}

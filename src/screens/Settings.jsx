@@ -56,9 +56,12 @@ import {
   Sun,
   PawPrint,
   Info,
+  Share2,
 } from "../components/ui/Icons.jsx";
-import { ConceptCards } from "../components/ConceptCards.jsx";
 import { CheckUpdateButton } from "../components/CheckUpdateButton.jsx";
+import { WhatsNewButton } from "../components/WhatsNewButton.jsx";
+import { HowItWorksButton } from "../components/HowItWorksButton.jsx";
+import { GITHUB_URL } from "../lib/updateCheck.js";
 import { DriveConflictSheet } from "../components/DriveConflictSheet.jsx";
 import { syncNow, useSyncStatus, connectAndPrepare, resolveConflict } from "../lib/syncEngine.js";
 import { disconnect, deleteRemoteFile } from "../lib/drive.js";
@@ -70,8 +73,9 @@ import {
 } from "../lib/notifications.js";
 import { biometricAvailable, verifyBiometric } from "../lib/biometric.js";
 
+const APP_VERSION = "0.2.8a";
 const ANDROID_APK_URL =
-  "https://github.com/zaiki505/CarPawl-Carpool-Fuel-Tracker/releases/download/v0.2.8/CarPawl.v0.2.8.apk";
+  `https://github.com/zaiki505/CarPawl-Carpool-Fuel-Tracker/releases/download/v${APP_VERSION}/CarPawl.v${APP_VERSION}.apk`;
 
 /* Settings: appearance, fuel/format prefs, default fuel price, the global people list, archived items with
    restore, JSON backup/restore, and the CyberCat easter egg. */
@@ -201,6 +205,10 @@ export function Settings() {
   async function saveUpcomingWindow(win) {
     await updateSettings({ upcomingWindow: win });
     toast("Upcoming trips view updated");
+  }
+
+  async function toggleSyncCard(on) {
+    await updateSettings({ syncStatusCard: on });
   }
 
   // Any payment-reminder toggle: enabling one asks for permission up front,
@@ -532,7 +540,7 @@ export function Settings() {
     { key: "people", label: "People", hint: "Passengers and archived items", icon: <Users size={20} /> },
     { key: "sync", label: "Google Drive sync", hint: "Sync across your devices", icon: <Cloud size={20} /> },
     { key: "backup", label: "Backup & restore", hint: "Export or restore a JSON file", icon: <Database size={20} /> },
-    { key: "concepts", label: "How it works", hint: "What the terms and concepts mean", icon: <Info size={20} /> },
+    { key: "about", label: "About CarPawl", hint: "Version, what's new & how it works", icon: <Info size={20} /> },
     { key: "danger", label: "Danger zone", hint: "Permanent deletes and full reset", icon: <AlertTriangle size={20} />, danger: true },
   ];
   const activeCat = CATEGORIES.find((c) => c.key === category);
@@ -1027,6 +1035,21 @@ export function Settings() {
             onDeleteBackup={onDeleteDriveBackup}
           />
         </div>
+        <div className="detail-panel field-grid" style={{ marginTop: "0.8rem" }}>
+          <Field
+            label="Sync status card"
+            hint="Show a small floating card at the top of the app while a sync runs. Turn it off to sync quietly."
+          >
+            <Segment
+              value={settings.syncStatusCard === false ? "off" : "on"}
+              onChange={(v) => toggleSyncCard(v === "on")}
+              options={[
+                { value: "on", label: "On" },
+                { value: "off", label: "Off" },
+              ]}
+            />
+          </Field>
+        </div>
       </section>
 
       {/* Backup & restore */}
@@ -1040,7 +1063,7 @@ export function Settings() {
           </p>
           <div className="btn-row btn-row--center" style={{ gap: "0.6rem", flexDirection: "column", alignItems: "center" }}>
             <button className="cta-primary" type="button" onClick={onExport}>
-              <Download size={16} /> Export JSON
+              <Upload size={16} /> Export JSON
             </button>
 
             <button
@@ -1048,7 +1071,7 @@ export function Settings() {
               type="button"
               onClick={() => fileRef.current?.click()}
             >
-              <Upload size={16} /> Restore JSON
+              <Download size={16} /> Restore JSON
             </button>
             <input
               ref={fileRef}
@@ -1064,15 +1087,30 @@ export function Settings() {
         </div>
       </section>
 
-      {/* How it works: a revisitable glossary of the app's concepts */}
-      <section className="section-block" data-cat="concepts">
-        <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
-          How it works
-        </h2>
-        <p className="field-hint" style={{ marginTop: 0, marginBottom: "0.6rem" }}>
-          Swipe through the terms CarPawl uses.
-        </p>
-        <ConceptCards />
+      {/* About CarPawl: name/version, update check, GitHub, what's new, how it
+          works (each row opens its own sheet) (BATCH_3 #1). */}
+      <section className="section-block" data-cat="about">
+        <div className="about-head">
+          <PawPrint size={28} className="about-head__logo" />
+          <div>
+            <h2 className="about-head__name">CarPawl</h2>
+            <p className="about-head__ver">Version {APP_VERSION}</p>
+          </div>
+        </div>
+
+        <div className="about-links">
+          {/* Native-only; renders nothing on web. */}
+          <CheckUpdateButton />
+          <a className="about-row" href={GITHUB_URL} target="_blank" rel="noreferrer">
+            <span className="about-row__lead">
+              <Share2 size={16} />
+              GitHub page
+            </span>
+            <ChevronRight size={16} className="about-row__chev" />
+          </a>
+          <WhatsNewButton />
+          <HowItWorksButton />
+        </div>
       </section>
 
       {/* Danger zone: permanent deletes + wipe everything */}
@@ -1160,7 +1198,7 @@ export function Settings() {
           )}
           <CheckUpdateButton />
           <p className="faint" style={{ fontSize: "0.68rem" }}>
-            v0.2.8 · Made by Zaiki
+            v{APP_VERSION} · Made by Zaiki
           </p>
         </div>
       )}

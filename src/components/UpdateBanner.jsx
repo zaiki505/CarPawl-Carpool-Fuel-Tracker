@@ -48,14 +48,17 @@ export function UpdateBanner() {
           CarPawl {update.latestVersion} is out - you have {update.currentVersion}.
         </span>
       </div>
-      <a
+      {/* Open the GitHub release PAGE, not the direct APK asset: the WebView
+          can't follow the redirecting binary download (and the biometric lock
+          re-locks on background), so it fails in-app; the release page opens in
+          the system browser where the APK downloads fine (#3/#4). */}
+      <button
         className="update-banner__action"
-        href={update.apkUrl}
-        target="_blank"
-        rel="noreferrer"
+        type="button"
+        onClick={() => window.open(update.releaseUrl, "_blank")}
       >
         <Download size={14} /> Update
-      </a>
+      </button>
       <button
         className="update-banner__close"
         type="button"

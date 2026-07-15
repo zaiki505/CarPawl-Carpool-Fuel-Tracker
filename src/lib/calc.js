@@ -468,13 +468,14 @@ export function creditRecordFor(groupEntries, who, ownerWho, payments, applicati
  * ------------------------------------------------------------------ */
 
 /** Total owed TO you: sum of owed() for every passenger across all owned groups.
- *  Credits are ignored (they never reduce this number). */
-export function totalOwedToYou(ownedGroups, entriesByGroup, payments) {
+ *  A debt settled by applied credit counts as paid, so `applications` must be
+ *  passed or it lingers in this total (#16). Available credit never reduces it. */
+export function totalOwedToYou(ownedGroups, entriesByGroup, payments, applications = []) {
   let total = 0;
   for (const g of ownedGroups) {
     const entries = entriesByGroup[g.id] || [];
     // "Me" is never owed to you in your own vehicle.
-    for (const row of groupBalances(entries, payments, { excludeMe: true })) {
+    for (const row of groupBalances(entries, payments, { excludeMe: true, applications })) {
       total += row.owed;
     }
   }
@@ -482,12 +483,13 @@ export function totalOwedToYou(ownedGroups, entriesByGroup, payments) {
 }
 
 /** Total YOU owe: your own outstanding share as a passenger across non-owned
- *  groups. Your personal credits don't reduce it. */
-export function totalYouOwe(nonOwnedGroups, entriesByGroup, payments) {
+ *  groups. A debt you've settled with credit is excluded (pass `applications`,
+ *  #16). Your remaining available credit doesn't reduce it. */
+export function totalYouOwe(nonOwnedGroups, entriesByGroup, payments, applications = []) {
   let total = 0;
   for (const g of nonOwnedGroups) {
     const entries = entriesByGroup[g.id] || [];
-    const { owed } = balanceForWho(entries, { type: "me" }, payments);
+    const { owed } = balanceForWho(entries, { type: "me" }, payments, { applications });
     total += owed;
   }
   return total;

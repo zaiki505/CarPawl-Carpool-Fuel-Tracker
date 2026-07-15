@@ -9,6 +9,32 @@ import { isNative } from "./platform.js";
 const REPO = "zaiki505/CarPawl-Carpool-Fuel-Tracker";
 const LATEST_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 
+/** Public links for the About section (#7). */
+export const GITHUB_URL = `https://github.com/${REPO}`;
+export const RELEASES_URL = `${GITHUB_URL}/releases`;
+
+/**
+ * Fetch the latest release notes to show in-app ("What's new"). Works on any
+ * platform - it's just the changelog, not the version gate. Returns null on a
+ * network / API failure so the caller can fall back to the GitHub link.
+ * @returns {Promise<null | { version, name, notes, url }>}
+ */
+export async function fetchLatestRelease() {
+  try {
+    const res = await fetch(LATEST_URL, { headers: { Accept: "application/vnd.github+json" } });
+    if (!res.ok) return null;
+    const rel = await res.json();
+    return {
+      version: String(rel.tag_name || rel.name || "").replace(/^v/i, ""),
+      name: rel.name || rel.tag_name || "Latest release",
+      notes: rel.body || "",
+      url: rel.html_url || RELEASES_URL,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** "v1.2.3" | "1.2.3" -> [1,2,3]. */
 function parseVer(v) {
   return String(v || "")

@@ -13,7 +13,7 @@ const ITEMS = [
 /* Bottom-fixed floating nav pill (6) - adapts the source's top nav pill: glass,
    pill radius, and a gliding squish-stretch active indicator that travels
    between items. A separate circular Add-Entry FAB floats above it. */
-export function BottomNav({ onAdd, showAdd = true }) {
+export function BottomNav({ onAdd, showAdd = true, addKind = "entry" }) {
   const { tab, goTab } = useApp();
   const itemRefs = useRef({});
   const [indStyle, setIndStyle] = useState(null);
@@ -65,16 +65,26 @@ export function BottomNav({ onAdd, showAdd = true }) {
     <>
       {showAdd && (
         <button
+          key={addKind === "vehicle" ? "fab-vehicle" : "fab-entry"}
           className={"fab-add" + (scrolling ? " fab-add--scrolling" : "")}
           onClick={() => {
             haptic("light");
             setScrolling(false);
             onAdd();
           }}
-          aria-label="Add refuel"
+          aria-label={addKind === "vehicle" ? "Add vehicle" : "Add refuel"}
           type="button"
         >
-          <Plus size={26} />
+          {addKind === "vehicle" ? (
+            <span className="fab-add__vehicle">
+              <Car size={30} />
+              <span className="fab-add__plus" aria-hidden="true">
+                <Plus size={10} strokeWidth={3} />
+              </span>
+            </span>
+          ) : (
+            <Plus size={26} />
+          )}
         </button>
       )}
       <nav className="bottom-nav" aria-label="Primary">

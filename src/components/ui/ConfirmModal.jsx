@@ -30,7 +30,14 @@ export function ConfirmModal() {
     >
       <div className="modal" role="alertdialog" aria-modal="true">
         <h3 className="modal__title">{confirm.title}</h3>
-        {confirm.body && <p className="modal__body">{confirm.body}</p>}
+        {confirm.body &&
+          (typeof confirm.body === "string" ? (
+            <p className="modal__body">{confirm.body}</p>
+          ) : (
+            // A rich (JSX) body renders as-is - block elements can't live in a
+            // <p>, so wrap in a div (used by the apply-to-entries warning, #11).
+            <div className="modal__body">{confirm.body}</div>
+          ))}
         <div className="modal__actions">
           <button
             className="cta-secondary"

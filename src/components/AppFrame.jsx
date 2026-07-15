@@ -10,6 +10,7 @@ import { GroupForm } from "./GroupForm.jsx";
 import { SelectionBar } from "./SelectionBar.jsx";
 import { ApplyCreditSheet } from "./ApplyCreditSheet.jsx";
 import { WalkthroughTour } from "./WalkthroughTour.jsx";
+import { SyncStatusCard } from "./SyncStatusCard.jsx";
 import { useApp } from "../app/AppContext.jsx";
 import { useSettings, usePeopleMap } from "../db/hooks.js";
 import { setFormatConfig } from "../lib/format.js";
@@ -66,12 +67,17 @@ export function AppFrame() {
         // The add-refuel FAB only belongs on Home, Vehicles and History (and a
         // vehicle's own page, which lives under Vehicles) - not on Settings.
         showAdd={tab !== "settings"}
+        // On the Vehicles LIST the FAB adds a vehicle (car icon, #2/#10); on a
+        // vehicle's own page it stays the round refuel "+".
+        addKind={tab === "groups" && !detail ? "vehicle" : "entry"}
         onAdd={() =>
-          openSheet({
-            type: "addEntry",
-            // On a vehicle's page, pre-select that vehicle (§16).
-            groupId: detail?.type === "group" ? detail.id : undefined,
-          })
+          tab === "groups" && !detail
+            ? openSheet({ type: "createGroup" })
+            : openSheet({
+                type: "addEntry",
+                // On a vehicle's page, pre-select that vehicle (§16).
+                groupId: detail?.type === "group" ? detail.id : undefined,
+              })
         }
       />
 
@@ -112,6 +118,9 @@ export function AppFrame() {
         />
       )}
 
+      {/* App-wide floating Drive-sync status card (BATCH_3 #3) - shows on every
+          tab, toggleable from the Drive-sync settings. */}
+      <SyncStatusCard />
       <SelectionBar />
       <ConfirmModal />
       <WalkthroughTour />

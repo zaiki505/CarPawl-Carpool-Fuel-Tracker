@@ -25,7 +25,7 @@ import { splitMethodShort } from "../lib/splitMethods.js";
 import { recurrenceLabel } from "../lib/recurrence.js";
 import { StatusBadge } from "./ui/Primitives.jsx";
 import { SwipeSettle } from "./ui/SwipeSettle.jsx";
-import { Fuel, ChevronDown, Pencil, Copy, Trash2, Wallet, Repeat, Undo2 } from "./ui/Icons.jsx";
+import { Fuel, ChevronDown, Pencil, Copy, Trash2, Wallet, Repeat, Undo2, Check } from "./ui/Icons.jsx";
 
 // Roll-up status: text colour for the collected figure in the collapsed row.
 const STATUS_COLOR = {
@@ -45,6 +45,8 @@ export function EntryCard({
   peopleMap,
   ownedByMe = false,
   ownerName,
+  ownerWho,
+  vehicleName,
   onlyWho = null,
   fallbackTitle,
   onRecordPayment,
@@ -143,6 +145,30 @@ export function EntryCard({
   const upcoming = isFutureDate(entry.date);
   const recurLabel = recurrenceLabel(entry.recurrence);
 
+  // Applied credit reads like a payment (it settles a debt), so it renders as a
+  // purple payment-chip - now sat right alongside that debtor's payment chips in
+  // their pay-history (#6/BATCH_3). `showName` is only for the fallback block.
+  const creditChip = (a, { showName } = {}) => (
+    <div className="pay-chip pay-chip--credit" key={a.id}>
+      <Wallet size={12} className="pay-chip__lead" />
+      <span className="pay-chip__amt">{formatMoney(a.amount)}</span>
+      <span className="pay-chip__meta">
+        via credit{showName && a.debtorWho ? ` · ${whoName(a.debtorWho, peopleMap)}` : ""}
+      </span>
+      {onReverseCredit && (
+        <button
+          className="pay-chip__btn pay-chip__btn--undo"
+          type="button"
+          onClick={() => onReverseCredit(a)}
+          aria-label="Undo credit application"
+          title="Undo credit application"
+        >
+          <Undo2 size={12} />
+        </button>
+      )}
+    </div>
+  );
+
   // Tap a detail/chip to jump straight into the editor with that field focused
   // (#6). No-op (falls through to the row toggle) when this card isn't editable.
   const tapEdit = (field) => (e) => {
@@ -162,17 +188,22 @@ export function EntryCard({
   const passengers = onlyWho
     ? allPassengers.filter((p) => onlyWho.has(whoKey(p.who)))
     : allPassengers;
-  const otherPax = passengers.filter((p) => !(ownedByMe && isMe(p.who)));
-  const meShare = passengers
-    .filter((p) => ownedByMe && isMe(p.who))
+  // The entry's payer - "Me" in my own car, or the carpool's owner - is billed
+  // but never owed: their share is "covered" (they paid the pump), so they're
+  // dropped from the collectible passengers (#6, generalising the old Me-only).
+  const isCoveredPayer = (who) =>
+    (ownedByMe && isMe(who)) || (ownerWho && whoEquals(who, ownerWho));
+  const otherPax = passengers.filter((p) => !isCoveredPayer(p.who));
+  const coveredShare = passengers
+    .filter((p) => isCoveredPayer(p.who))
     .reduce((sum, p) => sum + shareOf(p.who), 0);
 
-  // Billed includes your own share; collected counts that share as already
-  // covered (you paid the pump) plus real passenger payments.
+  // Billed includes the payer's own share; collected counts that share as
+  // already covered (they paid the pump) plus real passenger payments.
   const billable = passengers.reduce((sum, p) => sum + shareOf(p.who), 0);
   const collected =
     otherPax.reduce((sum, p) => sum + paymentsFor(entry, p.who, entryPayments), 0) +
-    meShare;
+    coveredShare;
   const hasPax = passengers.length > 0;
 
   // roll-up status across the collectible (non-Me) passengers
@@ -214,17 +245,31 @@ export function EntryCard({
         type="button"
         aria-expanded={open}
       >
+        {/* The trip icon is the edit affordance (with a pencil badge) */}
         <span
           className={
             "list-row__icon " +
-            (ownedByMe ? "list-row__icon--fillup" : "list-row__icon--carpool")
+            (ownedByMe ? "list-row__icon--fillup" : "list-row__icon--carpool") +
+            (onEdit && !selectionMode ? " list-row__icon--editable" : "")
           }
+          onClick={(e) => {
+            if (selectionMode || !onEdit) return; // let the tap bubble to the head
+            e.stopPropagation();
+            onEdit(entry);
+          }}
         >
           <Fuel size={20} />
+          {onEdit && !selectionMode && (
+            <span className="list-row__icon-pencil" aria-hidden="true">
+              <Pencil size={8} />
+            </span>
+          )}
         </span>
         <div className="list-row__body">
           <div className="list-row__title">
-            {entry.title || fallbackTitle || (ownedByMe ? "Refuel" : "Trip")}
+            {/* No car name here - it's on the chip below; a generic label reads
+                cleaner for an untitled entry (#1). */}
+            {entry.title || (ownedByMe ? "Refuel" : "Trip")}
           </div>
           <div className="list-row__meta">
             <span>
@@ -232,13 +277,10 @@ export function EntryCard({
             </span>
             <span
               className={
-                "owner-chip " +
-                (ownedByMe ? "owner-chip--mine" : "owner-chip--other") +
-                (onEdit ? " is-tappable" : "")
+                "owner-chip " + (ownedByMe ? "owner-chip--mine" : "owner-chip--other")
               }
-              onClick={tapEdit("vehicle")}
             >
-              {ownedByMe ? "You" : ownerName || "Someone"}
+              {vehicleName || (ownedByMe ? "You" : ownerName || "Someone")}
             </span>
             {upcoming && (
               <span
@@ -260,12 +302,23 @@ export function EntryCard({
         </div>
         <div className="list-row__trailing">
           {hasPax ? (
-            <span className="list-row__amount">
-              <span style={{ color: STATUS_COLOR[rollup] }}>
-                {formatMoneyShort(collected)}
+            rollup === "paid" ? (
+              // All owed shares settled - show the total + a done tick instead
+              // of "RM3 / RM3" (#2).
+              <span className="list-row__amount list-row__amount--done" title="All settled">
+                {formatMoneyShort(billable)}
+                <span className="list-row__done-badge">
+                  <Check size={12} strokeWidth={3} />
+                </span>
               </span>
-              <span className="faint">/{formatMoneyShort(billable)}</span>
-            </span>
+            ) : (
+              <span className="list-row__amount">
+                <span style={{ color: STATUS_COLOR[rollup] }}>
+                  {formatMoneyShort(collected)}
+                </span>
+                <span className="faint">/{formatMoneyShort(billable)}</span>
+              </span>
+            )
           ) : (
             <span className="list-row__amount">{formatMoney(entry.totalCost)}</span>
           )}
@@ -332,17 +385,22 @@ export function EntryCard({
           ) : (
             <div className="pax-list">
               {passengers.map((p, i) => {
-                const meInOwned = ownedByMe && isMe(p.who);
+                const covered = isCoveredPayer(p.who);
                 const s = shareOf(p.who);
-                // your own share in your own vehicle: reference only.
-                if (meInOwned) {
+                // The payer's share (you in your own car, or the carpool owner):
+                // reference only - covered by them, never owed (#6).
+                if (covered) {
+                  const self = isMe(p.who);
                   return (
                     <div className="pax-row pax-row--me" key={i}>
                       <div className="pax-row__top">
                         <div className="pax-row__main">
-                          <span className="pax-row__name">You</span>
+                          <span className="pax-row__name">
+                            {self ? "You" : whoName(p.who, peopleMap)}
+                          </span>
                           <span className="pax-row__sub">
-                            your share {formatMoney(s)} · covered by you
+                            {self ? "your" : "their"} share {formatMoney(s)} · covered by{" "}
+                            {self ? "you" : "them"}
                           </span>
                         </div>
                         <span className="badge badge--paid">billed</span>
@@ -359,6 +417,11 @@ export function EntryCard({
                 );
                 const showThisPay = !!expandedPay[whoKey(p.who)];
                 const visiblePay = showThisPay ? theirPayments : theirPayments.slice(0, 2);
+                // This debtor's applied credit - shown as chips in the same
+                // pay-history strip as their payments (#6/BATCH_3).
+                const paxApps = activeEntryApps.filter(
+                  (a) => a.debtorWho && whoEquals(a.debtorWho, p.who)
+                );
                 // Upcoming (future-dated) refuels accept payments IN ADVANCE.
                 // Those payments (and the refuel's shares) stay out of the live
                 // balances until the refuel date arrives, then net out - see
@@ -404,7 +467,7 @@ export function EntryCard({
                       </div>
                     </div>
 
-                    {theirPayments.length > 0 && (
+                    {(theirPayments.length > 0 || paxApps.length > 0) && (
                       <div
                         className={
                           "pay-history" +
@@ -465,6 +528,7 @@ export function EntryCard({
                                 }`}
                           </button>
                         )}
+                        {paxApps.map((a) => creditChip(a))}
                       </div>
                     )}
                   </div>
@@ -488,29 +552,22 @@ export function EntryCard({
             </div>
           )}
 
-          {activeEntryApps.length > 0 && (
-            <div className="entry-credit-list">
-              {activeEntryApps.map((a) => (
-                <div className="entry-credit-row" key={a.id}>
-                  <Wallet size={13} className="entry-credit-row__icon" />
-                  <span className="entry-credit-row__text">
-                    {formatMoney(a.amount)} credit applied
-                    <span className="faint"> · {whoName(a.debtorWho, peopleMap)}</span>
-                  </span>
-                  {onReverseCredit && (
-                    <button
-                      className="mini-btn"
-                      type="button"
-                      onClick={() => onReverseCredit(a)}
-                      title="Undo credit application"
-                    >
-                      <Undo2 size={12} /> <span className="mini-btn__label">Undo</span>
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          {(() => {
+            // Applied credit now lives in each debtor's pay-history row (#6). This
+            // fallback only catches credit whose debtor isn't among the shown
+            // passengers (e.g. hidden by the History filter), so nothing vanishes.
+            const shown = new Set(
+              otherPax.map((p) => whoKey(p.who))
+            );
+            const leftover = activeEntryApps.filter(
+              (a) => !a.debtorWho || !shown.has(whoKey(a.debtorWho))
+            );
+            return leftover.length > 0 ? (
+              <div className="pay-history entry-credit-chips">
+                {leftover.map((a) => creditChip(a, { showName: true }))}
+              </div>
+            ) : null;
+          })()}
 
           <div className="entry-card__actions">
             {onEdit && (

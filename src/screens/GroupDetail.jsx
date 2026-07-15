@@ -1,24 +1,26 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import {
   useGroup,
   useEntriesForGroup,
   usePayments,
+  usePeople,
   usePeopleMap,
   useSettings,
   useCreditApplicationsForGroup,
 } from "../db/hooks.js";
 import { useApp } from "../app/AppContext.jsx";
 import { useEntryActions } from "../app/useEntryActions.js";
-import { updateGroup, removeGroup, setGroupOverrideDefault } from "../db/actions.js";
+import { updateGroup, removeGroup, createPerson } from "../db/actions.js";
 import { groupBalances, outstanding, share, availableCredit } from "../lib/calc.js";
 import { formatMoney, formatMoneyShort, formatKmpl, formatDate, isFutureDate } from "../lib/format.js";
 import { whoName, personName } from "../lib/names.js";
-import { whoEquals, whoKey, ME, person as mkPerson } from "../lib/identity.js";
+import { whoEquals, ME, person as mkPerson } from "../lib/identity.js";
 import { buildWhatsAppText, shareText } from "../lib/exportText.js";
 import { EntryCard } from "../components/EntryCard.jsx";
 import { UpcomingReveal } from "../components/UpcomingReveal.jsx";
 import { PickTripSheet } from "../components/PickTripSheet.jsx";
 import { EmptyState, Field, NumberInput } from "../components/ui/Primitives.jsx";
+import { InfoTip } from "../components/ui/InfoTip.jsx";
 import { ScreenLoading } from "../components/ui/ScreenLoading.jsx";
 import {
   ArrowLeft,
@@ -29,12 +31,14 @@ import {
   Fuel,
   User,
   Wallet,
+  Plus,
 } from "../components/ui/Icons.jsx";
 
 export function GroupDetail({ groupId }) {
   const group = useGroup(groupId);
   const entries = useEntriesForGroup(groupId) || [];
   const payments = usePayments() || [];
+  const people = usePeople() || [];
   const peopleMap = usePeopleMap();
   const settings = useSettings();
   const applications = useCreditApplicationsForGroup(groupId) || [];
@@ -44,30 +48,26 @@ export function GroupDetail({ groupId }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [kmpl, setKmpl] = useState("");
+  // Editable carpool owner (#5) - only shown/used for non-owned groups.
+  const [ownerId, setOwnerId] = useState(null);
+  const [newOwnerName, setNewOwnerName] = useState("");
   // Tapping a balance records a payment straight away; if they owe on several
   // fill-ups, this holds the "which fill-up?" picker.
   const [payPickerWho, setPayPickerWho] = useState(null);
-
-  // Everyone who's ever ridden in this carpool - for managing their
-  // Compensate-method override default (a saved fixed amount that pre-fills
-  // new refuels, still editable per trip). Computed before the ready-guard
-  // below so this hook always runs in the same order every render.
-  const distinctPassengers = useMemo(() => {
-    const map = new Map();
-    for (const e of entries) {
-      for (const p of e.passengers || []) {
-        const key = whoKey(p.who);
-        if (!map.has(key)) map.set(key, p.who);
-      }
-    }
-    return [...map.values()];
-  }, [entries]);
 
   if (!group || !peopleMap) return <ScreenLoading />;
 
   const isOwned = group.ownerType === "me";
   // The owner every passenger owes / holds credit from (rule 1's pair).
   const ownerWho = isOwned ? ME : mkPerson(group.ownerPersonId);
+  // Default name used when the edit field is left blank (#7): "My Car" for your
+  // own vehicle, else "{owner}'s Car" from the currently-picked owner.
+  const editOwnerName = (people || []).find((p) => p.id === ownerId)?.name || "";
+  const editDefaultName = isOwned
+    ? "My Car"
+    : editOwnerName
+    ? `${editOwnerName}'s Car`
+    : "Their Car";
   const balances = groupBalances(entries, payments, {
     excludeMe: isOwned,
     excludeWho: isOwned ? null : ownerWho,
@@ -105,24 +105,59 @@ export function GroupDetail({ groupId }) {
   function startEdit() {
     setName(group.name);
     setKmpl(String(group.defaultKmPerLiter));
+    setOwnerId(group.ownerPersonId);
+    setNewOwnerName("");
     setEditing(true);
   }
-  async function saveEdit() {
-    const nm = name.trim();
-    if (!nm) {
-      toast("Give this car a name.", "error");
-      return;
+  // Picking an owner only sets the owner; the name keeps whatever you typed and
+  // falls back to a "{owner}'s Car" placeholder default when blank (#7).
+  function pickEditOwner(p) {
+    setOwnerId(p.id);
+  }
+  async function addOwnerPerson() {
+    const nm = newOwnerName.trim();
+    if (!nm) return;
+    try {
+      const p = await createPerson(nm);
+      pickEditOwner(p);
+      setNewOwnerName("");
+    } catch (e) {
+      toast(e.message, "error");
     }
+  }
+  async function saveEdit() {
+    // Blank name falls back to the placeholder default (#7).
+    const nm = name.trim() || editDefaultName;
     const kmplNum = Number(kmpl);
     if (!(kmplNum > 0)) {
       toast("Fuel efficiency must be greater than 0.", "error");
       return;
     }
     const effChanged = kmplNum !== Number(group.defaultKmPerLiter);
+    // Changing a carpool's owner recomputes who's owed across every trip (#5),
+    // since the owner is who all passengers owe. Confirm before applying.
+    const ownerChanged = !isOwned && ownerId && ownerId !== group.ownerPersonId;
+    if (ownerChanged) {
+      const ok = await askConfirm({
+        title: "Change this carpool's owner?",
+        body: `Every trip in ${group.name} is owed to its owner, so changing it recomputes who owes whom across all ${entries.length} trip${entries.length === 1 ? "" : "s"} here.`,
+        confirmLabel: "Change owner",
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    const patch = { name: nm, defaultKmPerLiter: kmplNum };
+    if (ownerChanged) patch.ownerPersonId = ownerId;
     try {
-      await updateGroup(group.id, { name: nm, defaultKmPerLiter: kmplNum });
+      await updateGroup(group.id, patch);
       setEditing(false);
-      toast(effChanged ? "Efficiency saved - applies to new trips" : "Car updated");
+      toast(
+        ownerChanged
+          ? "Owner changed - balances recomputed"
+          : effChanged
+          ? "Efficiency saved - applies to new trips"
+          : "Car updated"
+      );
     } catch (e) {
       toast(e.message, "error");
     }
@@ -180,10 +215,62 @@ export function GroupDetail({ groupId }) {
         {editing ? (
           <div className="field-grid">
             <Field label="Car name">
-              <input value={name} onChange={(e) => setName(e.target.value)} />
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={editDefaultName}
+              />
             </Field>
+            {!isOwned && (
+              <Field
+                label="Owner / driver"
+                hint="Who owns this car. Changing it recomputes every trip's balances."
+              >
+                {people.length > 0 && (
+                  <div className="chip-wrap">
+                    {people.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className="pick-chip"
+                        aria-pressed={ownerId === p.id}
+                        onClick={() => pickEditOwner(p)}
+                      >
+                        {ownerId === p.id && <Check size={13} />}
+                        {p.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div
+                  className="field-inline"
+                  style={{ gridTemplateColumns: "1fr auto", marginTop: "0.6rem" }}
+                >
+                  <input
+                    type="text"
+                    placeholder="Or add a new person…"
+                    value={newOwnerName}
+                    onChange={(e) => setNewOwnerName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addOwnerPerson();
+                      }
+                    }}
+                  />
+                  <button className="action-btn" type="button" onClick={addOwnerPerson}>
+                    <Plus size={15} /> Add
+                  </button>
+                </div>
+              </Field>
+            )}
             <Field
-              label="Fuel efficiency (km/L)"
+              label={
+                <>
+                  Fuel efficiency (km/L){" "}
+                  <InfoTip text="Most cars average about 12 km/L (~8 L/100km). For your car's exact figure, check its trip computer/dashboard or search your model online." />
+                </>
+              }
               hint="Applies to new trips only - past trips keep their own saved figures."
             >
               <NumberInput value={kmpl} onChange={setKmpl} step="0.1" min="0" />
@@ -274,30 +361,6 @@ export function GroupDetail({ groupId }) {
         </section>
       )}
 
-      {/* Custom Split Defaults - saved per person, per carpool */}
-      {distinctPassengers.length > 0 && (
-        <section className="section-block">
-          <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
-            Custom Split Defaults
-          </h2>
-          <p className="field-hint" style={{ marginTop: 0 }}>
-            A saved fixed amount for the custom split method - pre-fills on every new{" "}
-            {isOwned ? "refuel" : "trip"}, still editable each time.
-          </p>
-          <div className="detail-panel people-list">
-            {distinctPassengers.map((who) => (
-              <OverrideDefaultRow
-                key={whoKey(who)}
-                group={group}
-                who={who}
-                peopleMap={peopleMap}
-                toast={toast}
-              />
-            ))}
-          </div>
-        </section>
-      )}
-
       {/* Entries */}
       <section className="section-block">
         <h2 className="section-block__title" style={{ marginBottom: "0.6rem" }}>
@@ -320,6 +383,8 @@ export function GroupDetail({ groupId }) {
                 peopleMap={peopleMap}
                 ownedByMe={isOwned}
                 ownerName={personName(group.ownerPersonId, peopleMap)}
+                ownerWho={ownerWho}
+                vehicleName={group.name}
                 fallbackTitle={group.name}
                 applications={applications}
                 onRecordPayment={entryActions.onRecordPayment}
@@ -370,60 +435,3 @@ export function GroupDetail({ groupId }) {
   );
 }
 
-function OverrideDefaultRow({ group, who, peopleMap, toast }) {
-  const key = whoKey(who);
-  const saved = group.overrideDefaults?.[key];
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(saved != null ? String(saved) : "");
-
-  async function save() {
-    const trimmed = value.trim();
-    let amount = null;
-    if (trimmed !== "") {
-      const n = Number(trimmed);
-      if (!Number.isFinite(n) || n < 0) {
-        toast("Enter a valid amount (0 or more).", "error");
-        return;
-      }
-      amount = n;
-    }
-    await setGroupOverrideDefault(group.id, who, amount);
-    setEditing(false);
-    toast(amount == null ? "Default cleared" : `Default saved: RM${amount} fixed`);
-  }
-
-  if (editing) {
-    return (
-      <div className="people-row">
-        <span className="people-row__name">{whoName(who, peopleMap)}</span>
-        <div className="pax-dist-row__input" style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
-          <span>RM</span>
-          <input
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="0.01"
-            placeholder="0.00"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            style={{ width: "5.5rem" }}
-            autoFocus
-            onKeyDown={(e) => e.key === "Enter" && save()}
-          />
-          <button className="mini-btn" type="button" onClick={save}>
-            <Check size={13} /> Save
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="people-row">
-      <span className="people-row__name">{whoName(who, peopleMap)}</span>
-      <button className="mini-btn" type="button" onClick={() => setEditing(true)}>
-        <Pencil size={13} /> {saved != null ? `RM${saved} fixed` : "No default"}
-      </button>
-    </div>
-  );
-}
