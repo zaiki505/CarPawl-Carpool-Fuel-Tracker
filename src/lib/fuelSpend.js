@@ -99,6 +99,11 @@ export function computeFuelSpend({
   isDriver,
   riderSplit,
   fuelCost = (t) => t.fuelCost,
+  // What YOU actually spend on a trip you drove. Defaults to the whole fuel cost
+  // (the old "gross" scope). The dashboard overrides it with your own billed
+  // share on your car - the pump cost minus what passengers owe you back - so
+  // "total fuel spend" reflects only what's billed to you (BATCH_1 #8).
+  myDriverSpend = fuelCost,
   fuelLiters = (t) => t.totalLiters,
   period = "month",
   ref = new Date(),
@@ -109,37 +114,31 @@ export function computeFuelSpend({
     const d = parseISODate(t.date) || new Date(t.date);
     return d >= s && d < e;
   };
-  const spendOf = (list) =>
-    round2(
-      list.reduce(
-        (sum, t) =>
-          sum + (isDriver(t) ? Number(fuelCost(t)) || 0 : Number(riderSplit(t)) || 0),
-        0
-      )
-    );
+  // Your money on one trip: your billed share as driver, or your rider split.
+  const mySpendOf = (t) =>
+    isDriver(t) ? Number(myDriverSpend(t)) || 0 : Number(riderSplit(t)) || 0;
+  const spendOf = (list) => round2(list.reduce((sum, t) => sum + mySpendOf(t), 0));
 
   const cur = periodRange(period, ref);
   const curTrips = (trips || []).filter((t) => inRange(t, cur.start, cur.end));
 
   const asDriver = round2(
-    curTrips.filter(isDriver).reduce((s, t) => s + (Number(fuelCost(t)) || 0), 0)
+    curTrips.filter(isDriver).reduce((s, t) => s + (Number(myDriverSpend(t)) || 0), 0)
   );
   const asRider = round2(
     curTrips.filter((t) => !isDriver(t)).reduce((s, t) => s + (Number(riderSplit(t)) || 0), 0)
   );
   const yourSpend = round2(asDriver + asRider);
   const groupTotal = asDriver; // owned-only scope
-  // Litres attributable to you in the period, to parallel `yourSpend` (#8):
-  //   - own car (driver): the full litres you pumped
-  //   - carpool (rider): your prorated share of the trip's litres, by cost share
-  //     (your rider cost / trip cost), so litres tracks the money you're on the
-  //     hook for rather than fuel someone else paid for.
+  // Litres attributable to you in the period, prorated by your cost share of
+  // each trip (your spend / full trip cost), so litres tracks the money you're
+  // on the hook for. With the default gross scope this is the full litres you
+  // pumped as a driver; with the dashboard's "my share" scope it's your slice.
   const liters = round2(
     curTrips.reduce((s, t) => {
       const l = Number(fuelLiters(t)) || 0;
-      if (isDriver(t)) return s + l;
       const cost = Number(fuelCost(t)) || 0;
-      const myCost = Number(riderSplit(t)) || 0;
+      const myCost = mySpendOf(t);
       return s + (cost > 0 ? (l * myCost) / cost : 0);
     }, 0)
   );

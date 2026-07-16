@@ -2,6 +2,14 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, readSettings } from "./db.js";
 import { todayISODate } from "../lib/format.js";
+import { withCoveredWho } from "../lib/calc.js";
+
+/* Every entry is stamped with its group's covered payer at read time, so the
+   driver-comp split prices it correctly (see calc.customRawShare). Deriving it
+   here means it applies to EVERY entry, existing ones included, with no data
+   migration. The write side (db/actions) stamps with the SAME helper - if these
+   two ever diverge, the UI and the ledger disagree about what a trip costs. */
+const withCovered = withCoveredWho;
 
 /* Reactive read hooks (Dexie live queries). Every write via actions.js causes
    these to re-run automatically, so screens stay in sync with no manual
@@ -70,10 +78,14 @@ export function usePeopleMap() {
 }
 
 export function useEntries() {
-  return useLiveQuery(
-    () => db.entries.orderBy("date").reverse().toArray(),
-    []
-  );
+  return useLiveQuery(async () => {
+    const [rows, groups] = await Promise.all([
+      db.entries.orderBy("date").reverse().toArray(),
+      db.groups.toArray(),
+    ]);
+    const groupById = new Map(groups.map((g) => [g.id, g]));
+    return rows.map((e) => withCovered(e, groupById.get(e.groupId)));
+  }, []);
 }
 
 export function useEntriesForGroup(groupId) {
@@ -81,8 +93,13 @@ export function useEntriesForGroup(groupId) {
   return useLiveQuery(
     async () => {
       if (!groupId) return [];
-      const rows = await db.entries.where("groupId").equals(groupId).toArray();
-      return rows.sort((a, b) => new Date(b.date) - new Date(a.date));
+      const [rows, group] = await Promise.all([
+        db.entries.where("groupId").equals(groupId).toArray(),
+        db.groups.get(groupId),
+      ]);
+      return rows
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .map((e) => withCovered(e, group));
     },
     [groupId, dayKey]
   );
@@ -120,17 +137,19 @@ export function useGroup(groupId) {
 }
 
 export function useEntry(entryId) {
-  return useLiveQuery(
-    () => (entryId ? db.entries.get(entryId) : null),
-    [entryId]
-  );
+  return useLiveQuery(async () => {
+    if (!entryId) return null;
+    const entry = await db.entries.get(entryId);
+    if (!entry) return null;
+    return withCovered(entry, await db.groups.get(entry.groupId));
+  }, [entryId]);
 }
 
 /** Everything the Dashboard needs all assembled once. Returns null while loading. */
 export function useAllData() {
   const dayKey = useDayKey();
   return useLiveQuery(async () => {
-    const [groups, entries, payments, people, creditApplications, settings] = await Promise.all([
+    const [groups, rawEntries, payments, people, creditApplications, settings] = await Promise.all([
       db.groups.toArray(),
       db.entries.toArray(),
       db.payments.toArray(),
@@ -138,6 +157,10 @@ export function useAllData() {
       db.creditApplications.toArray(),
       readSettings(),
     ]);
+    // Attach each entry's covered payer up front so all downstream calc (shares,
+    // balances, spend) is consistent (v0.2.9 - driver-comp owner exclusion).
+    const groupById = new Map(groups.map((g) => [g.id, g]));
+    const entries = rawEntries.map((e) => withCovered(e, groupById.get(e.groupId)));
     // Newest first, so Dashboard "recent" and History read chronologically.
     entries.sort((a, b) => {
       const d = new Date(b.date) - new Date(a.date);

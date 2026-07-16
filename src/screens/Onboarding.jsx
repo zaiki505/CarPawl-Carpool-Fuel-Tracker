@@ -8,7 +8,7 @@ import { CURRENCIES } from "../lib/currencies.js";
 import { useApp } from "../app/AppContext.jsx";
 import { connectAndPrepare, resolveConflict } from "../lib/syncEngine.js";
 import { readBackupFile, restoreFromBackup } from "../lib/backup.js";
-import { Cloud, Upload, Plus, Loader2 } from "../components/ui/Icons.jsx";
+import { Cloud, Download, Plus, Loader2 } from "../components/ui/Icons.jsx";
 import { ConceptCards } from "../components/ConceptCards.jsx";
 
 // The curated primer shown at the end of a fresh setup - the handful of ideas a
@@ -125,7 +125,7 @@ function WelcomeStep({ onFresh, onDone }) {
           onClick={() => fileRef.current?.click()}
           disabled={busy}
         >
-          <Upload size={15} /> Restore from a backup file
+          <Download size={15} /> Restore from a backup file
         </button>
         <input
           ref={fileRef}

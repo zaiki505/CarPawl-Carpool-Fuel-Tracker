@@ -211,6 +211,8 @@ export function Dashboard() {
               entries={entriesByGroup[g.id]}
               payments={payments}
               peopleMap={peopleMap}
+              applications={data.creditApplications}
+              spendPeriod={data.settings?.fuelSpendPeriod || "month"}
               onOpen={openGroup}
             />
           ))
@@ -237,6 +239,8 @@ export function Dashboard() {
               entries={entriesByGroup[g.id]}
               payments={payments}
               peopleMap={peopleMap}
+              applications={data.creditApplications}
+              spendPeriod={data.settings?.fuelSpendPeriod || "month"}
               onOpen={openGroup}
             />
           ))

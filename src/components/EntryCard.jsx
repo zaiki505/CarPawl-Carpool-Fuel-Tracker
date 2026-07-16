@@ -12,6 +12,7 @@ import {
 import {
   formatMoney,
   formatMoneyShort,
+  formatMoneyCompact,
   formatDate,
   formatDateShort,
   formatLiters,
@@ -199,11 +200,18 @@ export function EntryCard({
     .reduce((sum, p) => sum + shareOf(p.who), 0);
 
   // Billed includes the payer's own share; collected counts that share as
-  // already covered (they paid the pump) plus real passenger payments.
+  // already covered (they paid the pump), plus real passenger payments, plus
+  // any credit applied here - a debt settled by credit reads exactly like a paid
+  // one everywhere else, so the collapsed row's figure must agree.
   const billable = passengers.reduce((sum, p) => sum + shareOf(p.who), 0);
   const collected =
-    otherPax.reduce((sum, p) => sum + paymentsFor(entry, p.who, entryPayments), 0) +
-    coveredShare;
+    otherPax.reduce(
+      (sum, p) =>
+        sum +
+        paymentsFor(entry, p.who, entryPayments) +
+        appliedCreditTo(entry.id, p.who, entryApps),
+      0
+    ) + coveredShare;
   const hasPax = passengers.length > 0;
 
   // roll-up status across the collectible (non-Me) passengers
@@ -305,22 +313,24 @@ export function EntryCard({
             rollup === "paid" ? (
               // All owed shares settled - show the total + a done tick instead
               // of "RM3 / RM3" (#2).
-              <span className="list-row__amount list-row__amount--done" title="All settled">
-                {formatMoneyShort(billable)}
+              <span className="list-row__amount list-row__amount--done" title={`All settled - ${formatMoney(billable)}`}>
+                {formatMoneyCompact(billable)}
                 <span className="list-row__done-badge">
                   <Check size={12} strokeWidth={3} />
                 </span>
               </span>
             ) : (
-              <span className="list-row__amount">
+              <span className="list-row__amount" title={`${formatMoney(collected)} / ${formatMoney(billable)}`}>
                 <span style={{ color: STATUS_COLOR[rollup] }}>
-                  {formatMoneyShort(collected)}
+                  {formatMoneyCompact(collected)}
                 </span>
-                <span className="faint">/{formatMoneyShort(billable)}</span>
+                <span className="faint">/{formatMoneyCompact(billable)}</span>
               </span>
             )
           ) : (
-            <span className="list-row__amount">{formatMoney(entry.totalCost)}</span>
+            <span className="list-row__amount" title={formatMoney(entry.totalCost)}>
+              {formatMoneyCompact(entry.totalCost)}
+            </span>
           )}
           <span className="entry-date">{formatDate(entry.date)}</span>
         </div>
@@ -411,6 +421,9 @@ export function EntryCard({
                 const paid = paymentsFor(entry, p.who, entryPayments);
                 const out = outstanding(entry, p.who, entryPayments, entryApps);
                 const status = statusOf(entry, p.who, entryPayments, entryApps);
+                // Paid more than they owe - their payment chips go blue to flag
+                // the extra amount (BATCH_1 #2).
+                const overpaid = out < -0.005;
                 const creditApplied = appliedCreditTo(entry.id, p.who, entryApps);
                 const theirPayments = entryPayments.filter((pm) =>
                   whoEquals(pm.who, p.who)
@@ -475,7 +488,10 @@ export function EntryCard({
                         }
                       >
                         {visiblePay.map((pm) => (
-                          <div className="pay-chip" key={pm.id}>
+                          <div
+                            className={"pay-chip" + (overpaid ? " pay-chip--overpay" : "")}
+                            key={pm.id}
+                          >
                             {onEditPayment ? (
                               <button
                                 type="button"

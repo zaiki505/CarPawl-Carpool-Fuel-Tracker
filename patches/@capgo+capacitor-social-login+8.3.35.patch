@@ -1,0 +1,59 @@
+diff --git a/node_modules/@capgo/capacitor-social-login/android/src/main/java/ee/forgr/capacitor/social/login/GoogleProvider.java b/node_modules/@capgo/capacitor-social-login/android/src/main/java/ee/forgr/capacitor/social/login/GoogleProvider.java
+index 3238de0..2d3a523 100644
+--- a/node_modules/@capgo/capacitor-social-login/android/src/main/java/ee/forgr/capacitor/social/login/GoogleProvider.java
++++ b/node_modules/@capgo/capacitor-social-login/android/src/main/java/ee/forgr/capacitor/social/login/GoogleProvider.java
+@@ -1,5 +1,6 @@
+ package ee.forgr.capacitor.social.login;
+ 
++import android.accounts.Account;
+ import android.app.Activity;
+ import android.app.PendingIntent;
+ import android.content.Context;
+@@ -522,7 +523,7 @@ public class GoogleProvider implements SocialProvider {
+             .apply();
+     }
+ 
+-    private ListenableFuture<AuthorizationResult> getAuthorizationResult(Boolean forceRefreshToken) {
++    private ListenableFuture<AuthorizationResult> getAuthorizationResult(Boolean forceRefreshToken, String accountEmail) {
+         //      Account account = new Account(credential.getId(), "com.google");
+         //      String scopesString = "oauth2:" + TextUtils.join(" ", this.scopes);
+         //      String token = GoogleAuthUtil.getToken(
+@@ -550,6 +551,14 @@ public class GoogleProvider implements SocialProvider {
+             AuthorizationRequest.Builder authorizationRequestBuilder = AuthorizationRequest.builder().setRequestedScopes(scopes);
+             // .requestOfflineAccess(this.clientId)
+ 
++            // Bind the authorization to the account the user just picked in the
++            // Credential Manager step. Without this, AuthorizationClient has no
++            // idea who was chosen and raises its OWN account picker, so the user
++            // gets asked to choose an account twice on a scoped sign-in.
++            if (accountEmail != null && !accountEmail.isEmpty()) {
++                authorizationRequestBuilder = authorizationRequestBuilder.setAccount(new Account(accountEmail, "com.google"));
++            }
++
+             if (GoogleProvider.this.mode == GoogleProviderLoginType.OFFLINE) {
+                 authorizationRequestBuilder = authorizationRequestBuilder.requestOfflineAccess(this.clientId, forceRefreshToken);
+             }
+@@ -647,7 +656,10 @@ public class GoogleProvider implements SocialProvider {
+                     }
+ 
+                     GoogleIdTokenCredential googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.getData());
+-                    ListenableFuture<AuthorizationResult> future = getAuthorizationResult(forceRefreshToken);
++                    ListenableFuture<AuthorizationResult> future = getAuthorizationResult(
++                        forceRefreshToken,
++                        googleIdTokenCredential.getId()
++                    );
+ 
+                     // Use ExecutorService to retrieve the access token
+                     ExecutorService executor = Executors.newSingleThreadExecutor();
+@@ -1073,7 +1085,10 @@ public class GoogleProvider implements SocialProvider {
+                         );
+                         String newIdToken = googleIdTokenCredential.getIdToken();
+ 
+-                        ListenableFuture<AuthorizationResult> future = getAuthorizationResult(false);
++                        ListenableFuture<AuthorizationResult> future = getAuthorizationResult(
++                            false,
++                            googleIdTokenCredential.getId()
++                        );
+ 
+                         ExecutorService authExecutor = Executors.newSingleThreadExecutor();
+                         authExecutor.execute(

@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useSyncStatus, syncNow } from "../lib/syncEngine.js";
+import { connect, DriveAuthError } from "../lib/drive.js";
+import { useApp } from "../app/AppContext.jsx";
 import { useSettings } from "../db/hooks.js";
 import { CloudOff, RefreshCw, X } from "./ui/Icons.jsx";
 
@@ -9,6 +11,7 @@ import { CloudOff, RefreshCw, X } from "./ui/Icons.jsx";
 export function DriveReauthBanner() {
   const status = useSyncStatus();
   const settings = useSettings();
+  const { toast } = useApp();
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -25,9 +28,16 @@ export function DriveReauthBanner() {
   async function onReconnect() {
     setBusy(true);
     try {
-      // Interactive: allowed to re-auth (silent auto-select on native, popup on
-      // web). If it clears the lapse, `needsReauth` flips false and this hides.
+      // A lapsed session can't be fixed silently - run the real sign-in (the
+      // account picker, same as Connect), then sync. Success flips needsReauth
+      // false and this banner hides.
+      await connect();
       await syncNow({ allowInteractive: true });
+    } catch (e) {
+      // Cancelled the picker / sign-in failed - keep the banner, tell them why.
+      if (!(e instanceof DriveAuthError && /cancel/i.test(e.message || ""))) {
+        toast(e?.message || "Couldn't reconnect Google Drive", "error");
+      }
     } finally {
       setBusy(false);
     }

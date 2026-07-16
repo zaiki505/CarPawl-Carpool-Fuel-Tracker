@@ -14,7 +14,7 @@ import { Capacitor } from "@capacitor/core";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import { db } from "../db/db.js";
 import { isFutureDate } from "./format.js";
-import { outstanding } from "./calc.js";
+import { outstanding, withCoveredWho } from "./calc.js";
 import { isMe } from "./identity.js";
 
 const REFUEL_REMINDER_ID = 1001;
@@ -129,12 +129,19 @@ export async function syncPaymentReminders(settings) {
     if (nudge) {
       const payments = await db.payments.toArray();
       const groups = await db.groups.toArray();
-      const ownedMap = new Map(groups.map((g) => [g.id, g.ownerType === "me"]));
-      const hasDebt = entries.some((e) => {
-        if (isFutureDate(e.date)) return false;
-        const owned = ownedMap.get(e.groupId);
+      // Credit already applied settles debt, so a credit-cleared balance must not
+      // trigger the "unsettled balances" nudge (v0.2.9 BATCH_2 #1).
+      const apps = await db.creditApplications.toArray();
+      const groupById = new Map(groups.map((g) => [g.id, g]));
+      const hasDebt = entries.some((e0) => {
+        if (isFutureDate(e0.date)) return false;
+        const g = groupById.get(e0.groupId);
+        const owned = g?.ownerType === "me";
+        // Stamp the covered payer so a driver-comp share is priced the same way
+        // as everywhere else.
+        const e = withCoveredWho(e0, g);
         return (e.passengers || []).some(
-          (p) => !(owned && isMe(p.who)) && outstanding(e, p.who, payments) > 0.005
+          (p) => !(owned && isMe(p.who)) && outstanding(e, p.who, payments, apps) > 0.005
         );
       });
       if (hasDebt) {

@@ -540,3 +540,52 @@ describe("future-dated refuels are not in effect yet", () => {
     expect(c.liters).toBe(15);
   });
 });
+
+// Driver-comp (v0.2.9): fuel + parking + tolls are shared by everyone on the
+// trip INCLUDING the covered payer (own car: you; carpool: the owner) - they
+// rode too. Only the maintenance markup, which exists to compensate that payer,
+// is borne entirely by the riders. `coveredWho` is attached at read time.
+describe("driver_comp: markup rides on the passengers only", () => {
+  // fuel 90, +10% maintenance -> unmarked 90, markup 9, base 99.
+  const base = { splitMethod: "driver_comp", totalCost: 90, parking: 0, maintenancePct: 10 };
+  const pax = [{ who: ME }, { who: alex }, { who: sam }];
+
+  it("without coveredWho, everyone splits fuel AND markup (legacy)", () => {
+    const e = { ...base, passengers: pax };
+    expect(share(e, ME)).toBeCloseTo(33); // 99 / 3
+    expect(share(e, alex)).toBeCloseTo(33);
+  });
+
+  it("the covered payer carries their fuel seat but none of the markup", () => {
+    const e = { ...base, coveredWho: ME, passengers: pax };
+    expect(share(e, ME)).toBeCloseTo(30); // 90/3 fuel, no markup
+    expect(share(e, alex)).toBeCloseTo(34.5); // 30 fuel + 9/2 markup
+    expect(share(e, sam)).toBeCloseTo(34.5);
+    // The markup (9) is fully covered by the two riders.
+    expect(entryTotalBillable(e, { excludeMe: true })).toBeCloseTo(69);
+    // The entry still totals the same as before.
+    expect(entryTotalBillable(e)).toBeCloseTo(99);
+  });
+
+  it("parking and tolls are shared with the covered payer; only markup isn't", () => {
+    // fuel 80 + parking 20 = 100 unmarked, +10% = 10 markup, tolls 30.
+    const e = {
+      splitMethod: "driver_comp",
+      totalCost: 80,
+      parking: 20,
+      maintenancePct: 10,
+      tolls: 30,
+      coveredWho: ME,
+      passengers: [{ who: ME }, { who: alex }],
+    };
+    expect(share(e, ME)).toBeCloseTo(65); // 50 unmarked + 0 markup + 15 tolls
+    expect(share(e, alex)).toBeCloseTo(75); // 50 + 10 markup + 15 tolls
+  });
+
+  it("carpool: the owner is the one who pays no markup", () => {
+    const e = { ...base, coveredWho: alex, passengers: [{ who: alex }, { who: sam }, { who: ME }] };
+    expect(share(e, alex)).toBeCloseTo(30); // owner: fuel seat only
+    expect(share(e, sam)).toBeCloseTo(34.5);
+    expect(share(e, ME)).toBeCloseTo(34.5);
+  });
+});

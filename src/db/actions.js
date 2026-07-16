@@ -14,7 +14,20 @@ import {
   outstanding as calcOutstanding,
   share as calcShare,
   creditPoolFor as calcCreditPool,
+  paymentsFor as calcPaymentsFor,
+  withCoveredWho,
 } from "../lib/calc.js";
+
+/** Read a group's entries already stamped with its covered payer, so the credit
+ *  rules below price a trip EXACTLY as the screens do. Reading them raw made the
+ *  ledger disagree with the UI on any driver-comp trip with a markup. */
+async function entriesForGroupPriced(groupId) {
+  const [rows, group] = await Promise.all([
+    db.entries.where("groupId").equals(groupId).toArray(),
+    db.groups.get(groupId),
+  ]);
+  return rows.map((e) => withCoveredWho(e, group));
+}
 
 /* Write operations + business rules.
    Everything that mutates the DB lives here so the rules (archiving instead of
@@ -467,10 +480,15 @@ export async function createPayment({ entryId, who, amount, date, note }) {
   if (!row.date) throw new Error("Pick a payment date.");
   if (row.amount <= 0) throw new Error("Enter a payment amount.");
   await db.payments.add(row);
+  // Paying a debt that credit already settled would otherwise settle it twice -
+  // reconcile refunds the now-redundant credit instead.
+  for (const gid of await groupIdsForEntries([row.entryId]))
+    await reconcileCreditForGroup(gid);
   return row;
 }
 
 export async function updatePayment(id, patch) {
+  const existing = await db.payments.get(id);
   const clean = { ...patch, updatedAt: nowISO() };
   if (clean.amount != null) {
     clean.amount = Number(clean.amount) || 0;
@@ -478,6 +496,12 @@ export async function updatePayment(id, patch) {
   }
   if (clean.note != null) clean.note = String(clean.note).trim() || null;
   await db.payments.update(id, clean);
+  // Editing an amount DOWN shrinks the overpayment a credit application drew on,
+  // exactly like deleting the payment - so it needs the same re-check. Without
+  // this, credit applied from an overpayment survived that overpayment being
+  // edited away, and the owner silently lost the difference.
+  for (const gid of await groupIdsForEntries(existing ? [existing.entryId] : []))
+    await reconcileCreditForGroup(gid);
 }
 
 export async function removePayment(id) {
@@ -528,7 +552,7 @@ export async function applyCredit({ debtorWho, creditorWho, groupId, allocations
     .filter((a) => a.entryId && a.amount > 0.005);
   if (!clean.length) throw new Error("Pick at least one debt to apply credit to.");
 
-  const entries = await db.entries.where("groupId").equals(groupId).toArray();
+  const entries = await entriesForGroupPriced(groupId);
   const entryById = new Map(entries.map((e) => [e.id, e]));
   const entryIds = entries.map((e) => e.id);
   const payments = entryIds.length
@@ -589,7 +613,7 @@ export async function reverseCreditApplication(id) {
  */
 export async function reconcileCreditForGroup(groupId) {
   if (!groupId) return;
-  const entries = await db.entries.where("groupId").equals(groupId).toArray();
+  const entries = await entriesForGroupPriced(groupId);
   const entryById = new Map(entries.map((e) => [e.id, e]));
   const entryIds = entries.map((e) => e.id);
   const payments = entryIds.length
@@ -617,8 +641,12 @@ export async function reconcileCreditForGroup(groupId) {
     const ekey = `${app.targetEntryId}|${dk}`;
     const eKept = appliedByEntry.get(ekey) || 0;
     const dKept = appliedByDebtor.get(dk) || 0;
-    const shareHere = calcShare(entry, app.debtorWho);
-    if (app.amount > shareHere - eKept + EPS || app.amount > pool - dKept + EPS) {
+    // Credit can only cover what's still owed on this debt AFTER cash: capping
+    // by the bare share let payments + credit jointly over-settle an entry. It
+    // also means paying a credit-settled debt in cash now refunds that credit
+    // (the application no longer fits, so it reverses) instead of paying twice.
+    const roomHere = calcShare(entry, app.debtorWho) - calcPaymentsFor(entry, app.debtorWho, payments);
+    if (app.amount > roomHere - eKept + EPS || app.amount > pool - dKept + EPS) {
       toReverse.push(app.id); // no longer fits -> reverse this (newer) one
       continue;
     }

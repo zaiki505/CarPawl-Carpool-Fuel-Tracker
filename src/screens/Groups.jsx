@@ -13,6 +13,7 @@ export function Groups() {
   if (!data) return <ScreenLoading />;
 
   const { ownedGroups, nonOwnedGroups, entriesByGroup, payments, peopleMap } = data;
+  const applications = data.creditApplications;
 
   return (
     <div className="app-shell stagger">
@@ -44,6 +45,8 @@ export function Groups() {
               entries={entriesByGroup[g.id]}
               payments={payments}
               peopleMap={peopleMap}
+              applications={applications}
+              spendPeriod={data.settings?.fuelSpendPeriod || "month"}
               onOpen={openGroup}
             />
           ))
@@ -72,6 +75,8 @@ export function Groups() {
               entries={entriesByGroup[g.id]}
               payments={payments}
               peopleMap={peopleMap}
+              applications={applications}
+              spendPeriod={data.settings?.fuelSpendPeriod || "month"}
               onOpen={openGroup}
             />
           ))

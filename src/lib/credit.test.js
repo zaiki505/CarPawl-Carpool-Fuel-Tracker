@@ -8,6 +8,7 @@ import {
   outstandingDebtsFor,
   creditRecordFor,
   groupBalances,
+  creditRefundedByPayment,
 } from "./calc.js";
 import { person, whoEquals } from "./identity.js";
 
@@ -93,5 +94,42 @@ describe("creditRecordFor (rule 7 view)", () => {
     expect(rec.applications).toHaveLength(1);
     expect(rec.from).toEqual(zai);
     expect(rec.holder).toEqual(ben);
+  });
+});
+
+/* Cash beats credit: paying an entry that credit already covers hands that
+   credit back rather than settling twice. This predicts exactly how much, so
+   the payment sheet can warn before the write instead of surprising the user. */
+describe("creditRefundedByPayment", () => {
+  // debt (e2) share 50, with 20 of ben's credit applied to it.
+  const app20 = { id: "a1", targetEntryId: "e2", debtorWho: ben, amount: 20, reversedAt: null, createdAt: "2026-03-01" };
+
+  it("nothing is handed back while the credit still fits", () => {
+    // paying 30 leaves 20 of room - exactly what the credit occupies.
+    expect(creditRefundedByPayment(debt, ben, [app20], 30)).toBeCloseTo(0);
+  });
+
+  it("hands the credit back once cash covers the whole debt", () => {
+    expect(creditRefundedByPayment(debt, ben, [app20], 50)).toBeCloseTo(20);
+  });
+
+  it("a partial payment can hand back MORE than it covers (whole rows)", () => {
+    // 40 cash leaves only 10 of room, so the whole 20 row reverses - they end up
+    // still owing 10, which is exactly what the warning has to say out loud.
+    expect(creditRefundedByPayment(debt, ben, [app20], 40)).toBeCloseTo(20);
+  });
+
+  it("keeps the older application and reverses the newer one that no longer fits", () => {
+    const older = { ...app20, id: "a1", amount: 10, createdAt: "2026-03-01" };
+    const newer = { ...app20, id: "a2", amount: 10, createdAt: "2026-03-02" };
+    // 35 cash leaves 15 of room: the older 10 fits, the newer 10 doesn't.
+    expect(creditRefundedByPayment(debt, ben, [newer, older], 35)).toBeCloseTo(10);
+  });
+
+  it("ignores reversed applications and other people's credit", () => {
+    const reversed = { ...app20, reversedAt: "2026-03-05" };
+    expect(creditRefundedByPayment(debt, ben, [reversed], 50)).toBeCloseTo(0);
+    const someoneElse = { ...app20, debtorWho: far };
+    expect(creditRefundedByPayment(debt, ben, [someoneElse], 50)).toBeCloseTo(0);
   });
 });

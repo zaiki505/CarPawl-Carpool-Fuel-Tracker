@@ -12,7 +12,15 @@ import {
   useCreditApplicationsForGroup,
   useGroup,
 } from "../db/hooks.js";
-import { outstanding, availableCredit, outstandingDebtsFor } from "../lib/calc.js";
+import {
+  outstanding,
+  availableCredit,
+  outstandingDebtsFor,
+  creditRefundedByPayment,
+  appliedCreditTo,
+  paymentsFor,
+  share,
+} from "../lib/calc.js";
 import { ME, person as mkPerson } from "../lib/identity.js";
 import { formatMoney, formatMoneyShort, todayISODate, isFutureDate } from "../lib/format.js";
 import { whoName } from "../lib/names.js";
@@ -50,7 +58,11 @@ export function PaymentSheet({ entry, who, payment, peopleMap, ownedByMe, onClos
   const others = editing
     ? entryPayments.filter((p) => p.id !== payment.id)
     : entryPayments;
-  const out = outstanding(liveEntry, who, others);
+  // Must include applied credit (groupApps) so the Outstanding shown, the
+  // prefilled amount, and the "more than they owe?" check all match the rest of
+  // the app - credit already applied to this entry settles part of the debt
+  // (v0.2.9 BATCH_2 #1).
+  const out = outstanding(liveEntry, who, others, groupApps);
 
   const [amount, setAmount] = useState(editing ? String(payment.amount) : "");
   const [amtInited, setAmtInited] = useState(editing);
@@ -73,17 +85,44 @@ export function PaymentSheet({ entry, who, payment, peopleMap, ownedByMe, onClos
       toast("Enter how much they paid.", "error");
       return;
     }
-    // Overpayment is allowed (it becomes credit),
-    // amount owed on this fill-up is `out`, so anything beyond it is extra.
-    const extra = amt - out;
-    if (extra > 0.005) {
-      const owedLabel = out > 0.005 ? formatMoney(out) : "nothing";
+    const noun = ownedByMe ? "refuel" : "trip";
+    const nounPl = ownedByMe ? "refuels" : "trips";
+    // Cash takes priority over credit, so recording this can hand credit that's
+    // already covering this entry back to them (see reconcileCreditForGroup).
+    // That's their money moving between buckets - never do it silently.
+    const paidAfter = paymentsFor(liveEntry, who, others) + amt;
+    const refund = creditRefundedByPayment(liveEntry, who, groupApps, paidAfter);
+    const keptCredit = appliedCreditTo(liveEntry.id, who, groupApps) - refund;
+    // Where they actually land once this write and its reconcile settle out.
+    const newOut = share(liveEntry, who) - paidAfter - keptCredit;
+    if (refund > 0.005) {
+      // Spell out where they land - a partial payment can hand back MORE credit
+      // than it covers, leaving them still owing, which would be a nasty surprise.
+      const tail =
+        newOut > 0.005
+          ? ` They'd still owe ${formatMoney(newOut)} on it.`
+          : newOut < -0.005
+          ? ` The extra ${formatMoney(-newOut)} becomes credit too.`
+          : "";
       const ok = await askConfirm({
-        title: "More than they owe?",
-        body: `${name} owes ${owedLabel} on this ${ownedByMe ? "refuel" : "trip"}. Recording ${formatMoney(amt)} leaves ${formatMoney(extra)} as credit toward future ${ownedByMe ? "refuels" : "trips"}. Record anyway?`,
-        confirmLabel: "Record anyway",
+        title: "Hand back their credit?",
+        body: `${formatMoney(refund)} of ${name}'s credit is covering this ${noun}. Recording this payment gives that credit back to them for another ${noun}, and settles this one with the payment instead.${tail}`,
+        confirmLabel: "Record payment",
       });
       if (!ok) return;
+    } else {
+      // Overpayment is allowed (it becomes credit),
+      // amount owed on this fill-up is `out`, so anything beyond it is extra.
+      const extra = amt - out;
+      if (extra > 0.005) {
+        const owedLabel = out > 0.005 ? formatMoney(out) : "nothing";
+        const ok = await askConfirm({
+          title: "More than they owe?",
+          body: `${name} owes ${owedLabel} on this ${noun}. Recording ${formatMoney(amt)} leaves ${formatMoney(extra)} as credit toward future ${nounPl}. Record anyway?`,
+          confirmLabel: "Record anyway",
+        });
+        if (!ok) return;
+      }
     }
     setBusy(true);
     try {
@@ -94,8 +133,10 @@ export function PaymentSheet({ entry, who, payment, peopleMap, ownedByMe, onClos
         await createPayment({ entryId: entry.id, who, amount: amt, date, note });
         toast(`Payment of ${formatMoney(amt)} recorded`);
       }
-      // Celebrate when this payment clears their balance for the fill-up.
-      if (amt >= out - 0.005) confettiBurst();
+      // Celebrate only if they're actually square on this fill-up afterwards.
+      // Basing this on `out` alone would cheer a payment that hands back more
+      // credit than it covers and leaves them still owing.
+      if (newOut <= 0.005) confettiBurst();
       onClose();
     } catch (e) {
       toast(e.message, "error");

@@ -114,6 +114,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   defaultMaintenancePct: DEFAULTS.defaultMaintenancePct,
   upcomingWindow: "1mo", // how far ahead upcoming trips show inline (see lib/upcoming.js)
   syncStatusCard: true, // show the floating "syncing with Drive" status card (BATCH_3 #3)
+  fuelSpendPeriod: "month", // "week" | "month" | "all" - shared by the dashboard card + vehicle "fuel spent"
   // Payment reminders (native). See lib/notifications.js syncPaymentReminders.
   upcomingReminderLead: "off", // "off" | "1d" | "3d" | "7d" - notify N before a scheduled trip
   upcomingArrivalReminder: false, // notify on the day a scheduled trip becomes due

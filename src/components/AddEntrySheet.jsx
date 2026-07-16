@@ -235,6 +235,9 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
     totalDistance: totals.totalDistance,
     splitMethod,
     customRemainderSplit,
+    // Covered payer (own car: you; carpool: the owner) - dropped from the
+    // driver-comp split so the preview matches saved entries (v0.2.9).
+    coveredWho: isOwned ? ME : group?.ownerPersonId ? mkPerson(group.ownerPersonId) : null,
     tolls: parseNum(tolls) || 0,
     parking: parseNum(parking) || 0,
     maintenancePct: parseNum(maintenancePct) || 0,
@@ -266,6 +269,15 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
   const overCollectAmount = isDriverComp
     ? round2(overrideSum - driverCompBase(previewEntry))
     : 0;
+  // A passenger given more km than the whole trip. In pure distance split that
+  // over-bills them; in custom/driver-comp split with a distance remainder it
+  // skews the proportions. Either way it's a data-entry slip worth flagging,
+  // mirroring the fixed-amount over-collect warning (v0.2.9).
+  const distByCustomComp = isDriverComp && customRemainderSplit === "distance";
+  const distOverTrip =
+    totalDistance > 0 &&
+    (isDistance || distByCustomComp) &&
+    syncedPassengers.some((p) => p.custom && effDist(p) > totalDistance + 0.005);
 
   // --- passenger candidates ---
   const usualWhoKeys = useMemo(() => {
@@ -1188,6 +1200,12 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
                   </div>
                 );
               })}
+              {distOverTrip && (
+                <div className="field-hint" style={{ color: "var(--tier-intermediate)" }}>
+                  A passenger's distance is longer than the whole trip ({formatKm(totalDistance)}) -
+                  they'd be billed more than it cost.
+                </div>
+              )}
             </div>
           )}
 
@@ -1195,10 +1213,12 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
           {!isDistance && syncedPassengers.length > 0 && (
             <div className="pax-dist-list">
               {isDriverComp && (
-                <div className="field-hint" style={{ marginTop: 0 }}>
-                  Billable to passengers: {formatMoney(entryTotalBillable(previewEntry))} (fuel +
-                  parking + {parseNum(maintenancePct) || 0}% maintenance, plus tolls split among
-                  who was present)
+                <div className="field-hint billable-hint" style={{ marginTop: 0 }}>
+                  <strong className="billable-hint__amt">
+                    Billable to passengers: {formatMoney(entryTotalBillable(previewEntry))}
+                  </strong>{" "}
+                  (fuel + parking + {parseNum(maintenancePct) || 0}% maintenance, plus tolls split
+                  among who was present)
                 </div>
               )}
 
@@ -1295,6 +1315,12 @@ export function AddEntrySheet({ entryId, preselectGroupId, duplicateOf, focusFie
                   </div>
                 );
               })}
+              {distOverTrip && (
+                <div className="field-hint" style={{ color: "var(--tier-intermediate)" }}>
+                  A passenger's distance is longer than the whole trip ({formatKm(totalDistance)}) -
+                  double-check the distances.
+                </div>
+              )}
             </div>
           )}
 

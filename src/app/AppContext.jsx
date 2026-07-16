@@ -112,6 +112,11 @@ export function AppProvider({ children }) {
   // Each entry's onClose is called (topmost first) when back is pressed.
   const [overlays, setOverlays] = useState([]); // [{ id, onClose }]
   const overlaySeq = useRef(0);
+  // A screen can register a lowest-priority back intercept (e.g. Settings: a
+  // category -> the list). Tracked as state so it counts toward the history
+  // depth below, which is what makes the WEB back gesture step through it too,
+  // not just Capacitor's native back button (BATCH_1 #9).
+  const [hasScreenBack, setHasScreenBack] = useState(false);
   const openOverlay = useCallback((onClose) => {
     const id = ++overlaySeq.current;
     setOverlays((o) => [...o, { id, onClose }]);
@@ -128,7 +133,8 @@ export function AppProvider({ children }) {
   // lets the browser consume it. selfPopRef counts the synthetic back()
   // calls so the popstate handler skips them instead of double-closing.
   const overlayDepth =
-    (detail ? 1 : 0) + (sheet ? 1 : 0) + (confirm ? 1 : 0) + overlays.length;
+    (detail ? 1 : 0) + (sheet ? 1 : 0) + (confirm ? 1 : 0) + overlays.length +
+    (hasScreenBack ? 1 : 0);
   const historyDepthRef = useRef(0);
   const selfPopRef = useRef(0);
 
@@ -169,6 +175,10 @@ export function AppProvider({ children }) {
         setSheet(null);
       } else if (detail) {
         setDetail(null);
+      } else if (backHandlerRef.current) {
+        // Lowest priority: a screen's own back intercept (Settings category ->
+        // list). This is what gives the web back gesture native-like behaviour.
+        backHandlerRef.current();
       }
     };
     window.addEventListener("popstate", onPop);
@@ -188,6 +198,9 @@ export function AppProvider({ children }) {
   const backHandlerRef = useRef(null);
   const setBackHandler = useCallback((fn) => {
     backHandlerRef.current = fn;
+    // Presence of a screen back handler feeds overlayDepth (above) so a history
+    // entry is pushed for it - that's what the web back gesture consumes.
+    setHasScreenBack(!!fn);
   }, []);
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;

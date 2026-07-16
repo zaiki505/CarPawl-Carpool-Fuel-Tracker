@@ -8,8 +8,38 @@
 
    distance is km; efficiency is km/L. */
 
-import { whoEquals, whoKey, isMe } from "./identity.js";
+import { whoEquals, whoKey, isMe, ME, person } from "./identity.js";
 import { parseISODate, isFutureDate } from "./format.js";
+
+/* ------------------------------------------------------------------ *
+ * Covered payer
+ *
+ * The one who paid the pump and is never billed for the maintenance markup:
+ * "me" on my own car, the owner on a carpool. It's derived from the GROUP, but
+ * the split math only ever sees an ENTRY - so entries are stamped with
+ * `coveredWho` before any calc runs.
+ *
+ * This lives here, in the pure lib, because BOTH sides must stamp identically:
+ * the read side (db/hooks) and the write side (db/actions' credit validation +
+ * reconcile). When only one side stamped, the UI and the ledger priced the same
+ * driver-comp trip differently, which broke applying credit and silently
+ * reversed valid applications.
+ * ------------------------------------------------------------------ */
+
+/** The who that a group's covered payer is, or null if it can't be determined. */
+export function coveredWhoForGroup(group) {
+  if (!group) return null;
+  return group.ownerType === "me"
+    ? ME
+    : group.ownerPersonId
+    ? person(group.ownerPersonId)
+    : null;
+}
+
+/** Stamp an entry with its group's covered payer, ready for the split math. */
+export function withCoveredWho(entry, group) {
+  return entry ? { ...entry, coveredWho: coveredWhoForGroup(group) } : entry;
+}
 
 /* ------------------------------------------------------------------ *
  * Fuel math (per entry)
@@ -198,26 +228,53 @@ function rawShareOfRow(entry, row) {
 }
 
 /** 'driver_comp' raw math for a NON-overridden row (overrides are handled in
- *  entryShares). Subtractive: overrides shrink the base pool the rest split. */
+ *  entryShares). Subtractive: overrides shrink the pools the rest split.
+ *
+ *  Two pools (v0.2.9):
+ *   - fuel + parking ("unmarked") and tolls are shared by EVERYONE on the trip,
+ *     the covered payer (own car: you; carpool: the owner) included - they rode
+ *     too, so they carry their own seat.
+ *   - the maintenance markup is compensation FOR the covered payer, so it's
+ *     borne entirely by the riders; the covered payer pays none of it.
+ *  `coveredWho` is attached to the entry at read time (see db/hooks enrichment).
+ *  Absent on raw/legacy objects, in which case nobody is treated as covered and
+ *  this reduces to the old single-pool split. */
 function customRawShare(entry, row) {
   const pax = entry.passengers || [];
+  const coveredWho = entry.coveredWho || null;
+  const isCovered = (p) => coveredWho != null && whoEquals(p.who, coveredWho);
+
+  const unmarked = (Number(entry.totalCost) || 0) + (Number(entry.parking) || 0);
+  const markup = unmarked * ((Number(entry.maintenancePct) || 0) / 100);
+  const fullBase = unmarked + markup; // == driverCompBase(entry)
+
+  // Fixed amounts are paid as-is and shrink what's left to split, taken
+  // proportionally out of both pools so the entry still totals the same.
   const overrideSum = pax.reduce(
     (s, p) => (p.manualOverride != null ? s + (Number(p.manualOverride) || 0) : s),
     0
   );
-  const basePool = Math.max(0, driverCompBase(entry) - overrideSum);
+  const scale = fullBase > 0 ? Math.max(0, fullBase - overrideSum) / fullBase : 0;
+  const unmarkedPool = unmarked * scale;
+  const markupPool = markup * scale;
 
   const remaining = pax.filter((p) => p.manualOverride == null);
-  const remainingDist = remaining.reduce((s, p) => s + (Number(p.distanceAssigned) || 0), 0);
-  // How to split the leftover pool among the non-overridden riders: 'equal'
-  // (default) or 'distance'. Legacy custom entries have no field and equal
-  // distances anyway, so 'equal' matches them exactly.
-  const byDistance = (entry.customRemainderSplit || "equal") === "distance" && remainingDist > 0;
-  const baseShare = byDistance
-    ? ((Number(row.distanceAssigned) || 0) / remainingDist) * basePool
-    : remaining.length
-    ? basePool / remaining.length
-    : 0;
+  const riders = remaining.filter((p) => !isCovered(p));
+
+  // Split the leftover 'equal' (default) or by distance. Distance mode with no
+  // distances recorded falls back to equal, matching legacy entries.
+  const distMode = (entry.customRemainderSplit || "equal") === "distance";
+  const distTotal = remaining.reduce((s, p) => s + (Number(p.distanceAssigned) || 0), 0);
+  const useEqual = !distMode || distTotal <= 0;
+  const weight = (p) => (useEqual ? 1 : Number(p.distanceAssigned) || 0);
+
+  const rowWeight = weight(row);
+  const allWeight = remaining.reduce((s, p) => s + weight(p), 0);
+  const riderWeight = riders.reduce((s, p) => s + weight(p), 0);
+
+  const unmarkedShare = allWeight > 0 ? unmarkedPool * (rowWeight / allWeight) : 0;
+  const markupShare =
+    isCovered(row) || riderWeight <= 0 ? 0 : markupPool * (rowWeight / riderWeight);
 
   const presentRemaining = remaining.filter((p) => isPresentForTolls(entry, p.who));
   const tollShare =
@@ -225,7 +282,7 @@ function customRawShare(entry, row) {
       ? tollsTotal(entry) / presentRemaining.length
       : 0;
 
-  return baseShare + tollShare;
+  return unmarkedShare + markupShare + tollShare;
 }
 
 /** Every passenger's cent-rounded share, parallel to entry.passengers.
@@ -402,6 +459,32 @@ export function appliedCreditTo(entryId, who, applications) {
   return activeApplications(applications)
     .filter((a) => a.targetEntryId === entryId && whoEquals(a.debtorWho, who))
     .reduce((s, a) => s + (Number(a.amount) || 0), 0);
+}
+
+/**
+ * How much of `who`'s credit applied to `entry` would be HANDED BACK if their
+ * cash on it totalled `paymentsTotal`. Cash takes priority, so credit that no
+ * longer fits the remaining debt is reversed and returned to their pool.
+ *
+ * Mirrors reconcileCreditForGroup's per-entry rule exactly (whole rows, oldest
+ * kept first) so the UI can warn with the real figure BEFORE the write happens.
+ * The pool rule isn't mirrored: adding cash can only grow a pool, never shrink
+ * it, so it can't newly reverse anything here.
+ */
+export function creditRefundedByPayment(entry, who, applications, paymentsTotal) {
+  const EPS = 0.005;
+  const room = share(entry, who) - paymentsTotal;
+  const apps = activeApplications(applications)
+    .filter((a) => a.targetEntryId === entry.id && whoEquals(a.debtorWho, who))
+    .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || "")); // oldest first
+  let kept = 0;
+  let refunded = 0;
+  for (const a of apps) {
+    const amt = Number(a.amount) || 0;
+    if (amt > room - kept + EPS) refunded += amt; // wouldn't fit -> reversed
+    else kept += amt;
+  }
+  return refunded;
 }
 
 /** Gross overpayment (credit) a debtor holds across a set of entries. Raw - it

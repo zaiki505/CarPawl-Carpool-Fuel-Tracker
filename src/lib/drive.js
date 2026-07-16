@@ -237,63 +237,84 @@ function tokenFromRefresh(res) {
   return { access_token: tok, expires_at: exp || Date.now() + 50 * 60 * 1000 };
 }
 
+/** A native call that never settles (an account chooser nobody answers because
+ *  the app is in the background) used to leave sync spinning forever, so every
+ *  non-interactive native call is bounded. */
+const NATIVE_SILENT_TIMEOUT_MS = 20000;
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new DriveAuthError(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 /**
  * Get a native access token.
  *
- * SYNC never shows an account chooser (#17): picking a different account than
- * the connected one yields a token for the wrong Drive and a confusing 401. So
- * a plain call only ever tries the SILENT path - refresh the stored token, and
- * only if that fails does it fall back to an auto-select login (which returns
- * the already-authorized account with no UI when there's a single one). If even
- * that fails it throws DriveAuthError so the caller can nudge a reconnect.
+ * SYNC IS SILENT-ONLY and never calls login(). That's deliberate:
+ *  - the plugin's login() runs Credential Manager AND a separate Drive-scope
+ *    authorization, either of which can put UI on screen;
+ *  - its `filterByAuthorizedAccounts` / `autoSelectEnabled` options only apply
+ *    to the 'bottom' style (style defaults to 'standard'), so they do NOT make a
+ *    plain login quiet - it opens the full "choose an account" picker, which is
+ *    how sync could land on the wrong Drive and 401;
+ *  - a picker raised while the app is backgrounded is never answered, so the
+ *    promise never settles and sync hangs in "syncing" indefinitely.
+ * So a plain call only refreshes the existing session. If that can't produce a
+ * token it throws DriveAuthError and the caller nudges a reconnect.
  *
- * The deliberate account chooser lives ONLY behind `forcePicker` (used by
- * connect()/"Reconnect"), never on the sync path - regardless of allowInteractive.
+ * The account chooser lives ONLY behind `forcePicker` (connect()/"Reconnect"),
+ * which is user-initiated and therefore not timed out.
  */
 async function getNativeToken({ forcePicker = false } = {}) {
   await ensureNativeInit();
 
-  // Explicit (re)connect: show the chooser so the user can pick / switch
-  // accounts. filterByAuthorizedAccounts:false shows every account on the
-  // device; autoSelectEnabled:false stops it auto-picking a single one.
+  // Explicit (re)connect: the user asked for it, so the chooser is expected.
   if (forcePicker) {
-    return nativeLogin({
-      scopes: [SCOPE],
-      style: "standard",
-      filterByAuthorizedAccounts: false,
-      autoSelectEnabled: false,
-    });
+    return nativeLogin({ scopes: [SCOPE], style: "standard" });
   }
 
-  // 1. Silent refresh - if the plugin hands back a token here, we're done with
-  //    zero UI (the ideal path for a routine or manual sync).
+  // 1. Ensure the plugin's session tokens are fresh. On Android this either
+  //    early-exits (tokens still valid) or silently renews them via Credential
+  //    Manager auto-select + an account-bound authorization - and in BOTH cases
+  //    it resolves with NO payload, so we can't read the token from here.
+  let refreshed;
   try {
-    const refreshed = await SocialLogin.refresh({
-      provider: "google",
-      options: { scopes: [SCOPE] },
-    });
-    const tok = tokenFromRefresh(refreshed);
-    if (tok) return tok;
-  } catch {
-    // fall through to the auto-select login
-  }
-
-  // 2. Auto-select login: returns the single already-authorized account with no
-  //    UI. It can surface a picker of AUTHORIZED accounts if several exist, but
-  //    it never opens the full "choose any account" flow - that only happens via
-  //    forcePicker above, so sync can't land on the wrong account.
-  try {
-    return await nativeLogin({
-      scopes: [SCOPE],
-      forceRefreshToken: true,
-      filterByAuthorizedAccounts: true,
-      autoSelectEnabled: true,
-    });
+    refreshed = await withTimeout(
+      SocialLogin.refresh({ provider: "google", options: { scopes: [SCOPE] } }),
+      NATIVE_SILENT_TIMEOUT_MS,
+      "Google Drive took too long to respond - reconnect from Settings."
+    );
   } catch (e) {
     throw e instanceof DriveAuthError
       ? e
-      : new DriveAuthError("Couldn't sign in to Google Drive silently - reconnect from Settings.");
+      : new DriveAuthError("Couldn't refresh Google Drive access - reconnect from Settings.");
   }
+  // Some platforms do return the token straight from refresh() - use it if so.
+  const tok = tokenFromRefresh(refreshed);
+  if (tok) return tok;
+
+  // 2. Pull the actual token. getAuthorizationCode() returns the plugin's
+  //    current access token after validating it against Google - no UI ever.
+  try {
+    const res = await withTimeout(
+      SocialLogin.getAuthorizationCode({ provider: "google" }),
+      NATIVE_SILENT_TIMEOUT_MS,
+      "Google Drive took too long to respond - reconnect from Settings."
+    );
+    const accessToken = res?.accessToken;
+    if (typeof accessToken === "string" && accessToken) {
+      // The plugin doesn't report this token's expiry; it was just validated,
+      // so give it a short conservative TTL. authedFetch's 401-retry mints a
+      // fresh one if it dies earlier than that.
+      return { access_token: accessToken, expires_at: Date.now() + 20 * 60 * 1000 };
+    }
+  } catch (e) {
+    if (e instanceof DriveAuthError && /took too long/.test(e.message)) throw e;
+    // fall through - treated as "no valid session"
+  }
+  throw new DriveAuthError("Google Drive sign-in expired - reconnect from Settings.");
 }
 
 /**

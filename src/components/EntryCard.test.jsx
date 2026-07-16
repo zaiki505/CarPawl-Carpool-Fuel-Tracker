@@ -155,4 +155,39 @@ describe("EntryCard", () => {
     expect(onRecordPayment).toHaveBeenCalledOnce();
     expect(onRecordPayment.mock.calls[0][1]).toEqual(alex); // (entry, who, ownedByMe)
   });
+
+  /* A debt settled by credit reads exactly like a paid one everywhere else, so
+     the collapsed row's "collected / billed" figure has to count it too. It used
+     to count only cash, contradicting the expanded row right beneath it. */
+  describe("collapsed row counts applied credit as collected", () => {
+    const apps = [
+      { id: "a1", targetEntryId: "e1", debtorWho: alex, amount: 20, reversedAt: null },
+    ];
+
+    it("credit counts toward the collected figure alongside cash", () => {
+      // share 60: RM10 cash + RM20 credit = RM30 collected, RM30 still owed.
+      render(
+        <EntryCard
+          entry={baseEntry}
+          payments={[{ id: "p1", entryId: "e1", who: alex, amount: 10, date: "2000-01-02" }]}
+          applications={apps}
+          peopleMap={peopleMap}
+        />
+      );
+      expect(screen.getByText("RM30")).toBeInTheDocument();
+      expect(screen.getByText("/RM60")).toBeInTheDocument();
+    });
+
+    it("a reversed application stops counting", () => {
+      render(
+        <EntryCard
+          entry={baseEntry}
+          payments={[{ id: "p1", entryId: "e1", who: alex, amount: 10, date: "2000-01-02" }]}
+          applications={[{ ...apps[0], reversedAt: "2000-01-03" }]}
+          peopleMap={peopleMap}
+        />
+      );
+      expect(screen.getByText("RM10")).toBeInTheDocument();
+    });
+  });
 });

@@ -1,17 +1,22 @@
 import { Capacitor } from "@capacitor/core";
 import { Share } from "@capacitor/share";
-import { groupBalances } from "./calc.js";
+import { groupBalances, coveredWhoForGroup } from "./calc.js";
 import { formatMoney, formatMoneyShort, formatDate } from "./format.js";
 import { whoName } from "./names.js";
 
 /* Plain-text balances export for sharing. Lists every passenger's
    current outstanding balance in a group. Delivered through the device's native
    share sheet. */
-export function buildWhatsAppText(group, entries, payments, peopleMap) {
-  // In your own vehicle, your own billed share is never collectable (you
-  // paid the pump) - exclude it here the same way the Balances screen does,
-  // or the shared text would list "Me" as an outstanding balance to yourself.
-  const balances = groupBalances(entries, payments, { excludeMe: group.ownerType === "me" });
+export function buildWhatsAppText(group, entries, payments, peopleMap, applications = []) {
+  // The one who paid the pump is never owed by themselves, so they're dropped
+  // here exactly as the Balances screen drops them - that's "me" in my own car,
+  // and the OWNER in a carpool (an owner riding along would otherwise be listed
+  // as owing themselves). `applications` nets out any credit already applied so
+  // a credit-settled debt reads as settled here too.
+  const balances = groupBalances(entries, payments, {
+    excludeWho: coveredWhoForGroup(group),
+    applications,
+  });
   const lines = [];
   lines.push(`⛽ ${group.name} - fuel balances`);
   lines.push(`(as of ${formatDate(new Date().toISOString())})`);

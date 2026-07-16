@@ -3,6 +3,8 @@ import { computeFuelSpend, FUEL_PERIODS, NO_BASELINE_MESSAGES } from "../lib/fue
 import { share } from "../lib/calc.js";
 import { ME } from "../lib/identity.js";
 import { formatMoney, formatLiters } from "../lib/format.js";
+import { useSettings } from "../db/hooks.js";
+import { updateSettings } from "../db/db.js";
 import { Segment } from "./ui/Primitives.jsx";
 import { TrendingUp, TrendingDown, Fuel } from "./ui/Icons.jsx";
 
@@ -10,7 +12,11 @@ import { TrendingUp, TrendingDown, Fuel } from "./ui/Icons.jsx";
    driver vs rider, the group (owned) total, and a trend vs the previous period
    with a message when there's no baseline. */
 export function FuelSpendCard({ entries, groupOwnedMap, onOpenBreakdown }) {
-  const [period, setPeriod] = useState("month");
+  // Period is persisted so the dashboard card and every vehicle's "fuel spent"
+  // line share one remembered selection (v0.2.9 #2).
+  const settings = useSettings();
+  const period = settings?.fuelSpendPeriod || "month";
+  const setPeriod = (v) => updateSettings({ fuelSpendPeriod: v });
   // Fresh no-baseline message each page load, stable across re-renders (#12).
   const [funMsg] = useState(
     () => NO_BASELINE_MESSAGES[Math.floor(Math.random() * NO_BASELINE_MESSAGES.length)]
@@ -22,6 +28,9 @@ export function FuelSpendCard({ entries, groupOwnedMap, onOpenBreakdown }) {
         trips: entries || [],
         isDriver: (e) => groupOwnedMap.get(e.groupId) === true,
         riderSplit: (e) => share(e, ME),
+        // Gross scope: on your own cars, the full pump cost of trips you drove;
+        // on carpools, your rider share (v0.2.9 - "trips you drove", reversing
+        // the brief "my share on own cars" experiment).
         fuelCost: (e) => e.totalCost,
         period,
       }),

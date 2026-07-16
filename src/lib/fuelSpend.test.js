@@ -110,4 +110,30 @@ describe("computeTrend edge cases", () => {
   it("flat trend", () => {
     expect(computeTrend(100, 100)).toMatchObject({ percentChange: 0, direction: "flat" });
   });
+
+  // BATCH_1 #8: the dashboard passes myDriverSpend so a driver's spend is only
+  // their own billed share, not the whole pump cost (passengers pay the rest).
+  it("myDriverSpend overrides the driver's spend to their own share", () => {
+    const trips = [
+      // Own-car trip: RM100 pumped, but my own share is only RM40.
+      { id: "a", date: "2026-07-10", driverId: "u1", fuelCost: 100, totalLiters: 50, riders: [] },
+    ];
+    const r = computeFuelSpend({
+      ...opts(trips, "month", REF),
+      myDriverSpend: () => 40,
+    });
+    expect(r.yourSpendBreakdown.asDriver).toBe(40);
+    expect(r.yourSpend).toBe(40);
+    // Litres track the money I'm on the hook for: 40/100 of 50 L = 20 L.
+    expect(r.liters).toBe(20);
+  });
+
+  it("without myDriverSpend, a driver's spend stays the full gross cost", () => {
+    const trips = [
+      { id: "a", date: "2026-07-10", driverId: "u1", fuelCost: 100, totalLiters: 50, riders: [] },
+    ];
+    const r = computeFuelSpend(opts(trips, "month", REF));
+    expect(r.yourSpendBreakdown.asDriver).toBe(100);
+    expect(r.liters).toBe(50);
+  });
 });

@@ -185,7 +185,7 @@ export function GroupDetail({ groupId }) {
   }
 
   async function onExport() {
-    const text = buildWhatsAppText(group, entries, payments, peopleMap);
+    const text = buildWhatsAppText(group, entries, payments, peopleMap, applications);
     const res = await shareText(text, `${group.name} - fuel balances`);
     if (res === "shared") return;
     if (res === "copied") toast("Balances copied to clipboard");

@@ -27,6 +27,24 @@ export function formatMoneyShort(n) {
   return `${v < 0 ? "-" : ""}${_symbol}${body}`;
 }
 
+/** Compact money for tight rows: thousands collapse to "RM1.2k" / millions to
+ *  "RM1.2M" so a big figure never shoves the row's left content (#7). Under
+ *  1,000 it matches formatMoneyShort (no trailing-zero noise). */
+export function formatMoneyCompact(n) {
+  const v = Number(n) || 0;
+  const abs = Math.abs(v);
+  const sign = v < 0 ? "-" : "";
+  // One decimal, but drop a trailing ".0" (12.0 -> "12", 1.24 -> "1.2").
+  const oneDp = (x) => {
+    const r = Math.round(x * 10) / 10;
+    return Number.isInteger(r) ? String(r) : r.toFixed(1);
+  };
+  if (abs >= 1_000_000) return `${sign}${_symbol}${oneDp(abs / 1_000_000)}M`;
+  if (abs >= 1_000) return `${sign}${_symbol}${oneDp(abs / 1_000)}k`;
+  const body = Number.isInteger(abs) ? String(abs) : abs.toFixed(2);
+  return `${sign}${_symbol}${body}`;
+}
+
 export function formatLiters(n) {
   return `${(Number(n) || 0).toFixed(2)} L`;
 }

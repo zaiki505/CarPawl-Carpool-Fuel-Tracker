@@ -73,9 +73,12 @@ import {
 } from "../lib/notifications.js";
 import { biometricAvailable, verifyBiometric } from "../lib/biometric.js";
 
-const APP_VERSION = "0.2.8a";
-const ANDROID_APK_URL =
-  `https://github.com/zaiki505/CarPawl-Carpool-Fuel-Tracker/releases/download/v${APP_VERSION}/CarPawl.v${APP_VERSION}.apk`;
+const APP_VERSION = "0.2.9";
+// The release PAGE (not the direct .apk asset): a WebView / in-app browser can't
+// follow GitHub's redirecting binary download, so we send people to the release
+// page and let them tap the APK there in the real browser (BATCH_1 #5, same fix
+// as the in-app update button).
+const ANDROID_RELEASE_PAGE = `${GITHUB_URL}/releases/tag/v${APP_VERSION}`;
 
 /* Settings: appearance, fuel/format prefs, default fuel price, the global people list, archived items with
    restore, JSON backup/restore, and the CyberCat easter egg. */
@@ -594,12 +597,19 @@ export function Settings() {
                     </p>
                   </div>
                 </div>
-                <a className="cta-primary btn-block" href={ANDROID_APK_URL} style={{ marginTop: "0.7rem" }}>
-                  <Download size={16} /> Download Android app
+                <a
+                  className="cta-primary btn-block"
+                  href={ANDROID_RELEASE_PAGE}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ marginTop: "0.7rem" }}
+                >
+                  <Download size={16} /> Get the Android app
                 </a>
                 <p className="field-hint" style={{ marginTop: "0.5rem", fontSize: "0.66rem" }}>
-                  Android may warn about installing outside the Play Store, that's
-                  expected for a direct download outside the store.
+                  Opens the GitHub release page - tap the .apk there to download.
+                  Android may warn about installing outside the Play Store; that's
+                  expected for a direct download.
                 </p>
               </div>
             </section>
@@ -1061,13 +1071,13 @@ export function Settings() {
           <p className="field-hint" style={{ marginTop: "0" }}>
             Export a JSON backup regularly and keep it somewhere safe.
           </p>
-          <div className="btn-row btn-row--center" style={{ gap: "0.6rem", flexDirection: "column", alignItems: "center" }}>
-            <button className="cta-primary" type="button" onClick={onExport}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+            <button className="cta-primary btn-block" type="button" onClick={onExport}>
               <Upload size={16} /> Export JSON
             </button>
 
             <button
-              className="cta-secondary"
+              className="cta-secondary btn-block"
               type="button"
               onClick={() => fileRef.current?.click()}
             >
@@ -1091,7 +1101,13 @@ export function Settings() {
           works (each row opens its own sheet) (BATCH_3 #1). */}
       <section className="section-block" data-cat="about">
         <div className="about-head">
-          <PawPrint size={28} className="about-head__logo" />
+          <img
+            src="/CarPawl-icon.png"
+            alt="CarPawl"
+            className="about-head__logo"
+            width={44}
+            height={44}
+          />
           <div>
             <h2 className="about-head__name">CarPawl</h2>
             <p className="about-head__ver">Version {APP_VERSION}</p>

@@ -1,5 +1,25 @@
 import { describe, it, expect } from "vitest";
-import { parseISODate, isFutureDate } from "./format.js";
+import { parseISODate, isFutureDate, formatMoneyCompact } from "./format.js";
+
+/* Compact money keeps big figures narrow so they don't squeeze a row's left
+   content (BATCH_1 #7). Default currency symbol is "RM". */
+describe("formatMoneyCompact", () => {
+  it("leaves sub-thousand values readable, no trailing-zero noise", () => {
+    expect(formatMoneyCompact(0)).toBe("RM0");
+    expect(formatMoneyCompact(5)).toBe("RM5");
+    expect(formatMoneyCompact(12.5)).toBe("RM12.50");
+    expect(formatMoneyCompact(999)).toBe("RM999");
+  });
+  it("collapses thousands to a k suffix with one decimal, dropping .0", () => {
+    expect(formatMoneyCompact(1000)).toBe("RM1k");
+    expect(formatMoneyCompact(1234)).toBe("RM1.2k");
+    expect(formatMoneyCompact(12345)).toBe("RM12.3k");
+  });
+  it("collapses millions and keeps the sign", () => {
+    expect(formatMoneyCompact(1_500_000)).toBe("RM1.5M");
+    expect(formatMoneyCompact(-2000)).toBe("-RM2k");
+  });
+});
 
 /* These two underpin the whole future-vs-past-refuel behaviour, so they're
    worth locking down. parseISODate must read a bare date in LOCAL time (never
