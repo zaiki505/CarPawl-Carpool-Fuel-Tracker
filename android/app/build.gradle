@@ -22,6 +22,32 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+
+    // Beta and official are separate apps on the device: different
+    // applicationId, so you can keep a stable build installed while testing a
+    // beta, and they never share a database. app_name is set here rather than
+    // in res/values/strings.xml - two sources for the same resource is a
+    // duplicate-resource build error, so it was removed from there.
+    //
+    // NOTE: the applicationId is half of a Google OAuth Android client's
+    // identity (package name + signing SHA-1). The beta id below will NOT match
+    // the client registered for com.carpawl.app, so Google Sign-In and Drive
+    // sync fail on beta builds until a SECOND Android OAuth client is created
+    // for com.carpawl.app.beta in the same Google Cloud project.
+    flavorDimensions "channel"
+    productFlavors {
+        beta {
+            dimension "channel"
+            applicationIdSuffix ".beta"
+            resValue "string", "app_name", "CarPawl Beta"
+            resValue "string", "title_activity_main", "CarPawl Beta"
+        }
+        official {
+            dimension "channel"
+            resValue "string", "app_name", "CarPawl"
+            resValue "string", "title_activity_main", "CarPawl"
+        }
+    }
 }
 
 repositories {

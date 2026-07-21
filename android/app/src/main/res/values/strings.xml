@@ -1,7 +1,8 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">CarPawl</string>
-    <string name="title_activity_main">CarPawl</string>
+    <!-- app_name and title_activity_main come from the gradle product flavor
+         (see app/build.gradle) so beta and official can differ. Defining them
+         here too would be a duplicate-resource build failure. -->
     <string name="package_name">com.carpawl.app</string>
     <string name="custom_url_scheme">com.carpawl.app</string>
 </resources>

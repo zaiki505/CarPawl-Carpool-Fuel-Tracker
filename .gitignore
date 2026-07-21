@@ -5,6 +5,10 @@ dist-ssr
 .env
 .env.*
 !.env.example
+# Build-channel config, NOT secrets - these must be committed or
+# `build:beta` / `build:release` produce an unconfigured build.
+!.env.beta
+!.env.release
 .DS_Store
 .vite
 .claude/

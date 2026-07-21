@@ -1,5 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { APP_NAME } from "./lib/channel.js";
+
+// index.html ships a static title; correct it for the channel this build is.
+// Otherwise an official build would still say "CarPawl Beta" in the tab.
+document.title = APP_NAME;
 
 // Self-hosted JetBrains Mono
 import "@fontsource/jetbrains-mono/400.css";

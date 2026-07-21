@@ -70,8 +70,8 @@ import {
   syncPaymentReminders,
 } from "../lib/notifications.js";
 import { biometricAvailable, verifyBiometric } from "../lib/biometric.js";
+import { APP_VERSION, APP_NAME, IS_BETA } from "../lib/channel.js";
 
-const APP_VERSION = "0.3.0";
 // The release PAGE (not the direct .apk asset): a WebView / in-app browser can't
 // follow GitHub's redirecting binary download, so we send people to the release
 // page and let them tap the APK there in the real browser (BATCH_1 #5, same fix
@@ -1079,8 +1079,13 @@ export function Settings() {
             height={44}
           />
           <div>
-            <h2 className="about-head__name">CarPawl</h2>
-            <p className="about-head__ver">Version {APP_VERSION}</p>
+            <h2 className="about-head__name">{APP_NAME}</h2>
+            {/* Say the channel out loud - a bug report is much easier to place
+                when you know which build it came from. */}
+            <p className="about-head__ver">
+              Version {APP_VERSION}
+              {IS_BETA ? " · beta channel" : ""}
+            </p>
           </div>
         </div>
 

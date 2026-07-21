@@ -1,8 +1,17 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+import { readFileSync } from "node:fs";
+
+// Single source of truth for the web build's version. Without this the version
+// lived in package.json AND a hand-copied constant in Settings.jsx, which drift
+// apart the moment one is bumped and the other isn't.
+const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   resolve: {
     dedupe: ["react", "react-dom"],
   },
