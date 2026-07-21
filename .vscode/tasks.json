@@ -1,0 +1,250 @@
+{
+  // Release tasks for CarPawl's two channels.
+  //
+  // The channels are SEPARATE BRANCHES in this one repo:
+  //   main    -> beta.     Pushes to `origin`           (CarPawl-Beta)
+  //   release -> official. Pushes to `CarPawl_Official` (CarPawl-Carpool-Fuel-Tracker)
+  //
+  // So the two repos hold different code: main runs ahead, and release only
+  // moves when you promote. Day-to-day work happens on main; you should rarely
+  // commit on release directly - promote instead.
+  //
+  // These tasks cover what VS Code's Git UI cannot express:
+  //   * the official remote's branch is `master`, not `release`, so a naive
+  //     push would create a stray branch there
+  //   * promotion is a merge from main into release, then a push
+  //   * a beta tag belongs only on the beta remote, an official tag only on
+  //     the public one
+  //
+  // Run with: Ctrl+Shift+P -> "Tasks: Run Task".
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Beta: push main",
+      "detail": "Pushes the beta branch to CarPawl-Beta. Official is untouched.",
+      "type": "shell",
+      "command": "git",
+      "args": [
+        "push",
+        "origin",
+        "main"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Promote beta -> official",
+      "detail": "Merges main into release and pushes it to the public repo. Run the OFFICIAL APK build afterwards.",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "_checkout release",
+        "_merge main into release",
+        "_push release",
+        "_back to main"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "_checkout release",
+      "hide": true,
+      "type": "shell",
+      "command": "git",
+      "args": [
+        "checkout",
+        "release"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "_merge main into release",
+      "hide": true,
+      "type": "shell",
+      "command": "git",
+      "args": [
+        "merge",
+        "--no-ff",
+        "main",
+        "-m",
+        "Promote beta to official"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "_push release",
+      "hide": true,
+      "type": "shell",
+      "command": "git",
+      "args": [
+        "push",
+        "CarPawl_Official",
+        "release:master"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "_back to main",
+      "hide": true,
+      "type": "shell",
+      "command": "git",
+      "args": [
+        "checkout",
+        "main"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Build BETA APK",
+      "detail": "Run on main. Vite --mode beta, cap sync, then the beta product flavor.",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "_web beta",
+        "_apk beta"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "_web beta",
+      "hide": true,
+      "type": "shell",
+      "command": "npm",
+      "args": [
+        "run",
+        "build:mobile:beta"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "_apk beta",
+      "hide": true,
+      "type": "shell",
+      "command": "./gradlew",
+      "windows": {
+        "command": ".\\gradlew.bat"
+      },
+      "args": [
+        "assembleBetaRelease"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/android"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build OFFICIAL APK",
+      "detail": "Check out release first. Vite --mode release, cap sync, then the official flavor.",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "_web release",
+        "_apk official"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "_web release",
+      "hide": true,
+      "type": "shell",
+      "command": "npm",
+      "args": [
+        "run",
+        "build:mobile:release"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "_apk official",
+      "hide": true,
+      "type": "shell",
+      "command": "./gradlew",
+      "windows": {
+        "command": ".\\gradlew.bat"
+      },
+      "args": [
+        "assembleOfficialRelease"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/android"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Tag + push BETA prerelease",
+      "detail": "Tags the current commit (be on main) and pushes the tag to the BETA remote only.",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "_tag beta",
+        "_push tag beta"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "_tag beta",
+      "hide": true,
+      "type": "shell",
+      "command": "git",
+      "args": [
+        "tag",
+        "v${input:betaVersion}"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "_push tag beta",
+      "hide": true,
+      "type": "shell",
+      "command": "git",
+      "args": [
+        "push",
+        "origin",
+        "v${input:betaVersion}"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Tag + push OFFICIAL release",
+      "detail": "Tags the current commit (be on release, after promoting) and pushes the tag to the PUBLIC remote only.",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "_tag official",
+        "_push tag official"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "_tag official",
+      "hide": true,
+      "type": "shell",
+      "command": "git",
+      "args": [
+        "tag",
+        "v${input:releaseVersion}"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "_push tag official",
+      "hide": true,
+      "type": "shell",
+      "command": "git",
+      "args": [
+        "push",
+        "CarPawl_Official",
+        "v${input:releaseVersion}"
+      ],
+      "problemMatcher": []
+    }
+  ],
+
+  "inputs": [
+    {
+      "id": "betaVersion",
+      "type": "promptString",
+      "description": "Beta version WITHOUT the leading v, e.g. 0.4.0-beta.1",
+      "default": "0.4.0-beta.1"
+    },
+    {
+      "id": "releaseVersion",
+      "type": "promptString",
+      "description": "Release version WITHOUT the leading v, e.g. 0.4.0",
+      "default": "0.4.0"
+    }
+  ]
+}

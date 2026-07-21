@@ -1,6 +1,10 @@
 # Netlify build config for the CarPawl Vite PWA.
+#
+# carpawl.netlify.app is the OFFICIAL web app, so it builds the release channel.
+# A bare `npm run build` defaults to beta (see src/lib/channel.js), which would
+# title the tab "CarPawl Beta" and point the update check at the beta repo.
 [build]
-  command = "npm run build"
+  command = "npm run build:release"
   publish = "dist"
 
 # SPA fallback: every route serves index.html so client-side navigation and
