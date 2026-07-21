@@ -24,10 +24,13 @@
       "detail": "Pushes the beta branch to CarPawl-Beta. Official is untouched.",
       "type": "shell",
       "command": "git",
-      "args": ["push", "origin", "main"],
+      "args": [
+        "push",
+        "origin",
+        "main"
+      ],
       "problemMatcher": []
     },
-
     {
       "label": "Promote beta -> official",
       "detail": "Merges main into release and pushes it to the public repo. Run the OFFICIAL APK build afterwards.",
@@ -45,7 +48,10 @@
       "hide": true,
       "type": "shell",
       "command": "git",
-      "args": ["checkout", "release"],
+      "args": [
+        "checkout",
+        "release"
+      ],
       "problemMatcher": []
     },
     {
@@ -53,8 +59,13 @@
       "hide": true,
       "type": "shell",
       "command": "git",
-      // --no-ff keeps a visible promotion point in the official history.
-      "args": ["merge", "--no-ff", "main", "-m", "Promote beta to official"],
+      "args": [
+        "merge",
+        "--no-ff",
+        "main",
+        "-m",
+        "Promote beta to official"
+      ],
       "problemMatcher": []
     },
     {
@@ -62,8 +73,11 @@
       "hide": true,
       "type": "shell",
       "command": "git",
-      // release:master - the official remote's branch is named master.
-      "args": ["push", "CarPawl_Official", "release:master"],
+      "args": [
+        "push",
+        "CarPawl_Official",
+        "release:master"
+      ],
       "problemMatcher": []
     },
     {
@@ -71,15 +85,20 @@
       "hide": true,
       "type": "shell",
       "command": "git",
-      "args": ["checkout", "main"],
+      "args": [
+        "checkout",
+        "main"
+      ],
       "problemMatcher": []
     },
-
     {
       "label": "Build BETA APK",
       "detail": "Run on main. Vite --mode beta, cap sync, then the beta product flavor.",
       "dependsOrder": "sequence",
-      "dependsOn": ["_web beta", "_apk beta"],
+      "dependsOn": [
+        "_web beta",
+        "_apk beta"
+      ],
       "problemMatcher": []
     },
     {
@@ -87,7 +106,10 @@
       "hide": true,
       "type": "shell",
       "command": "npm",
-      "args": ["run", "build:mobile:beta"],
+      "args": [
+        "run",
+        "build:mobile:beta"
+      ],
       "problemMatcher": []
     },
     {
@@ -95,17 +117,25 @@
       "hide": true,
       "type": "shell",
       "command": "./gradlew",
-      "windows": { "command": ".\\gradlew.bat" },
-      "args": ["assembleBetaRelease"],
-      "options": { "cwd": "${workspaceFolder}/android" },
+      "windows": {
+        "command": ".\\gradlew.bat"
+      },
+      "args": [
+        "assembleBetaRelease"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/android"
+      },
       "problemMatcher": []
     },
-
     {
       "label": "Build OFFICIAL APK",
       "detail": "Check out release first. Vite --mode release, cap sync, then the official flavor.",
       "dependsOrder": "sequence",
-      "dependsOn": ["_web release", "_apk official"],
+      "dependsOn": [
+        "_web release",
+        "_apk official"
+      ],
       "problemMatcher": []
     },
     {
@@ -113,7 +143,10 @@
       "hide": true,
       "type": "shell",
       "command": "npm",
-      "args": ["run", "build:mobile:release"],
+      "args": [
+        "run",
+        "build:mobile:release"
+      ],
       "problemMatcher": []
     },
     {
@@ -121,17 +154,25 @@
       "hide": true,
       "type": "shell",
       "command": "./gradlew",
-      "windows": { "command": ".\\gradlew.bat" },
-      "args": ["assembleOfficialRelease"],
-      "options": { "cwd": "${workspaceFolder}/android" },
+      "windows": {
+        "command": ".\\gradlew.bat"
+      },
+      "args": [
+        "assembleOfficialRelease"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/android"
+      },
       "problemMatcher": []
     },
-
     {
       "label": "Tag + push BETA prerelease",
       "detail": "Tags the current commit (be on main) and pushes the tag to the BETA remote only.",
       "dependsOrder": "sequence",
-      "dependsOn": ["_tag beta", "_push tag beta"],
+      "dependsOn": [
+        "_tag beta",
+        "_push tag beta"
+      ],
       "problemMatcher": []
     },
     {
@@ -139,7 +180,10 @@
       "hide": true,
       "type": "shell",
       "command": "git",
-      "args": ["tag", "v${input:betaVersion}"],
+      "args": [
+        "tag",
+        "v${input:betaVersion}"
+      ],
       "problemMatcher": []
     },
     {
@@ -147,15 +191,21 @@
       "hide": true,
       "type": "shell",
       "command": "git",
-      "args": ["push", "origin", "v${input:betaVersion}"],
+      "args": [
+        "push",
+        "origin",
+        "v${input:betaVersion}"
+      ],
       "problemMatcher": []
     },
-
     {
       "label": "Tag + push OFFICIAL release",
       "detail": "Tags the current commit (be on release, after promoting) and pushes the tag to the PUBLIC remote only.",
       "dependsOrder": "sequence",
-      "dependsOn": ["_tag official", "_push tag official"],
+      "dependsOn": [
+        "_tag official",
+        "_push tag official"
+      ],
       "problemMatcher": []
     },
     {
@@ -163,7 +213,10 @@
       "hide": true,
       "type": "shell",
       "command": "git",
-      "args": ["tag", "v${input:releaseVersion}"],
+      "args": [
+        "tag",
+        "v${input:releaseVersion}"
+      ],
       "problemMatcher": []
     },
     {
@@ -171,7 +224,11 @@
       "hide": true,
       "type": "shell",
       "command": "git",
-      "args": ["push", "CarPawl_Official", "v${input:releaseVersion}"],
+      "args": [
+        "push",
+        "CarPawl_Official",
+        "v${input:releaseVersion}"
+      ],
       "problemMatcher": []
     }
   ],
