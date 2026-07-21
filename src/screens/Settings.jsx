@@ -8,8 +8,6 @@ import {
   removePerson,
   restorePerson,
   restoreGroup,
-  clearPerson,
-  clearGroup,
   clearAllData,
   permanentlyDeleteGroup,
   permanentlyDeletePerson,
@@ -73,7 +71,7 @@ import {
 } from "../lib/notifications.js";
 import { biometricAvailable, verifyBiometric } from "../lib/biometric.js";
 
-const APP_VERSION = "0.2.9";
+const APP_VERSION = "0.3.0";
 // The release PAGE (not the direct .apk asset): a WebView / in-app browser can't
 // follow GitHub's redirecting binary download, so we send people to the release
 // page and let them tap the APK there in the real browser (BATCH_1 #5, same fix
@@ -156,10 +154,11 @@ export function Settings() {
 
   if (!settings) return <ScreenLoading />;
 
-  const archivedPeople = allPeople.filter((p) => p.isArchived && !p.cleared);
-  const archivedGroups = allGroups.filter((g) => g.isArchived && !g.cleared);
-  const clearedPeople = allPeople.filter((p) => p.cleared);
-  const clearedGroups = allGroups.filter((g) => g.cleared);
+  // No `cleared` filter any more - that middle state is gone, so anything an
+  // older build collapsed into a stub shows up here again, ready to restore or
+  // delete. Leaving it filtered out would strand those rows unreachable.
+  const archivedPeople = allPeople.filter((p) => p.isArchived);
+  const archivedGroups = allGroups.filter((g) => g.isArchived);
 
   function onTheme(next) {
     setTheme(next);
@@ -306,42 +305,11 @@ export function Settings() {
     }
   }
 
-  async function onClearArchivedGroup(g) {
-    const ok = await askConfirm({
-      title: `Clear ${g.name} from the list?`,
-      body: "It'll disappear from Archived for good. Its past refuels and all your totals stay exactly as they are - only a tiny name record is kept so history still reads correctly.",
-      confirmLabel: "Clear from list",
-      danger: true,
-    });
-    if (!ok) return;
-    try {
-      await clearGroup(g.id);
-      toast(`${g.name} cleared`);
-    } catch (e) {
-      toast(e.message, "error");
-    }
-  }
-
-  async function onClearArchivedPerson(p) {
-    const ok = await askConfirm({
-      title: `Clear ${p.name} from the list?`,
-      body: "They'll disappear from Archived for good. Their past refuels and all your totals stay exactly as they are - only a tiny name record is kept so history still reads correctly.",
-      confirmLabel: "Clear from list",
-      danger: true,
-    });
-    if (!ok) return;
-    try {
-      await clearPerson(p.id);
-      toast(`${p.name} cleared`);
-    } catch (e) {
-      toast(e.message, "error");
-    }
-  }
 
   async function onPermaDeleteGroup(g) {
     const ok = await askConfirm({
       title: `Delete ${g.name} forever?`,
-      body: "This removes it AND every refuel and payment under it, permanently. Historical totals will change. This cannot be undone.",
+      body: "This removes it AND every refuel, payment and credit under it, permanently. Your fuel spend and history totals will drop by whatever this car accounted for. This cannot be undone.",
       confirmLabel: "Delete forever",
       danger: true,
     });
@@ -357,7 +325,7 @@ export function Settings() {
   async function onPermaDeletePerson(p) {
     const ok = await askConfirm({
       title: `Delete ${p.name} forever?`,
-      body: "This removes them from every refuel, deletes their payments, and permanently deletes any carpool they own (with its refuels). Historical totals will change. This cannot be undone.",
+      body: "This takes them off every refuel and deletes their payments and credit for good. Everyone else keeps owing exactly what they owe now, so those refuels will no longer add up to their full cost - you absorb this person's share. This cannot be undone.",
       confirmLabel: "Delete forever",
       danger: true,
     });
@@ -544,7 +512,7 @@ export function Settings() {
     { key: "sync", label: "Google Drive sync", hint: "Sync across your devices", icon: <Cloud size={20} /> },
     { key: "backup", label: "Backup & restore", hint: "Export or restore a JSON file", icon: <Database size={20} /> },
     { key: "about", label: "About CarPawl", hint: "Version, what's new & how it works", icon: <Info size={20} /> },
-    { key: "danger", label: "Danger zone", hint: "Permanent deletes and full reset", icon: <AlertTriangle size={20} />, danger: true },
+    { key: "danger", label: "Danger zone", hint: "Erase all data on this device", icon: <AlertTriangle size={20} />, danger: true },
   ];
   const activeCat = CATEGORIES.find((c) => c.key === category);
 
@@ -985,11 +953,11 @@ export function Settings() {
                     <button
                       className="mini-btn mini-btn--danger"
                       type="button"
-                      onClick={() => onClearArchivedGroup(g)}
-                      aria-label={`Clear ${g.name} from the list`}
-                      title="Clear from list"
+                      onClick={() => onPermaDeleteGroup(g)}
+                      aria-label={`Delete ${g.name} forever`}
+                      title="Delete forever"
                     >
-                      <Trash2 size={13} /> <span className="mini-btn__label">Clear</span>
+                      <Trash2 size={13} /> <span className="mini-btn__label">Delete</span>
                     </button>
                   </div>
                 </div>
@@ -1012,18 +980,19 @@ export function Settings() {
                     <button
                       className="mini-btn mini-btn--danger"
                       type="button"
-                      onClick={() => onClearArchivedPerson(p)}
-                      aria-label={`Clear ${p.name} from the list`}
-                      title="Clear from list"
+                      onClick={() => onPermaDeletePerson(p)}
+                      aria-label={`Delete ${p.name} forever`}
+                      title="Delete forever"
                     >
-                      <Trash2 size={13} /> <span className="mini-btn__label">Clear</span>
+                      <Trash2 size={13} /> <span className="mini-btn__label">Delete</span>
                     </button>
                   </div>
                 </div>
               ))}
             </div>
             <p className="field-hint" style={{ textAlign: "center", marginTop: "0.4rem" }}>
-              “Clear” removes an item from this list for good but keeps history intact.
+              “Restore” puts it back in use. “Delete” erases it and its history
+              for good.
             </p>
           </>
         )}
@@ -1129,54 +1098,12 @@ export function Settings() {
         </div>
       </section>
 
-      {/* Danger zone: permanent deletes + wipe everything */}
+      {/* Danger zone: wipe everything. Per-item permanent deletes live on the
+          Archived rows, next to Restore. */}
       <section className="section-block" data-cat="danger">
         <h2 className="section-block__title" style={{ marginBottom: "0.6rem", color: "#ff6b81" }}>
           Danger zone
         </h2>
-
-        {(clearedGroups.length > 0 || clearedPeople.length > 0) && (
-          <div className="detail-panel" style={{ marginBottom: "0.8rem" }}>
-            <p className="field-hint" style={{ marginTop: 0 }}>
-              Cleared items. Deleting permanently also removes their refuels /
-              payments and changes historical totals.
-            </p>
-            <div className="people-list">
-              {clearedGroups.map((g) => (
-                <div className="people-row" key={g.id}>
-                  <span className="people-row__name">
-                    <Car size={15} /> {g.name}
-                  </span>
-                  <button
-                    className="mini-btn mini-btn--danger"
-                    type="button"
-                    onClick={() => onPermaDeleteGroup(g)}
-                    aria-label={`Delete ${g.name} forever`}
-                    title="Delete forever"
-                  >
-                    <Trash2 size={13} /> <span className="mini-btn__label">Delete forever</span>
-                  </button>
-                </div>
-              ))}
-              {clearedPeople.map((p) => (
-                <div className="people-row" key={p.id}>
-                  <span className="people-row__name">
-                    <User size={15} /> {p.name}
-                  </span>
-                  <button
-                    className="mini-btn mini-btn--danger"
-                    type="button"
-                    onClick={() => onPermaDeletePerson(p)}
-                    aria-label={`Delete ${p.name} forever`}
-                    title="Delete forever"
-                  >
-                    <Trash2 size={13} /> <span className="mini-btn__label">Delete forever</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         <div className="detail-panel">
           <p className="field-hint" style={{ marginTop: 0 }}>

@@ -3968,9 +3968,9 @@ body.light .people-row__edit {
   flex: 0 0 auto;
 }
 
-/* Compact row actions: on narrow screens the People / Archived / cleared row
-   buttons drop their text label and keep just the icon, so a long name always
-   has room to show. The buttons keep aria-label + title so they stay usable. */
+/* Compact row actions: on narrow screens the People / Archived row buttons drop
+   their text label and keep just the icon, so a long name always has room to
+   show. The buttons keep aria-label + title so they stay usable. */
 @media (max-width: 460px) {
   .people-row__actions .mini-btn__label {
     display: none;

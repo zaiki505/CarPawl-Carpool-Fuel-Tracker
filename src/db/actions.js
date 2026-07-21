@@ -15,6 +15,7 @@ import {
   share as calcShare,
   creditPoolFor as calcCreditPool,
   paymentsFor as calcPaymentsFor,
+  entryShares as calcEntryShares,
   withCoveredWho,
 } from "../lib/calc.js";
 
@@ -101,26 +102,7 @@ export async function removePerson(id) {
 }
 
 export async function restorePerson(id) {
-  await db.people.update(id, { isArchived: false, cleared: false, updatedAt: nowISO() });
-}
-
-/** "Clear" an archived person: collapse the row to a tiny name-only stub so it
- *  leaves the Archived list but past fill-ups still resolve their name and all
- *  historical totals stay correct. */
-export async function clearPerson(id) {
-  const p = await db.people.get(id);
-  if (!p) return;
-  // Keep createdAt - the read hooks sort by it; dropping it would make the
-  // stub invisible to any orderBy("createdAt") query (IndexedDB indexes
-  // exclude records missing the indexed field).
-  await db.people.put({
-    id: p.id,
-    name: p.name,
-    isArchived: true,
-    cleared: true,
-    createdAt: p.createdAt || nowISO(),
-    updatedAt: nowISO(),
-  });
+  await db.people.update(id, { isArchived: false, updatedAt: nowISO() });
 }
 
 /* ============================ Groups ============================ */
@@ -194,24 +176,7 @@ export async function removeGroup(id) {
 }
 
 export async function restoreGroup(id) {
-  await db.groups.update(id, { isArchived: false, cleared: false, updatedAt: nowISO() });
-}
-
-/** "Clear" an archived group: collapse to a minimal stub. Its fill-ups stay in
- *  History with the right name; it just leaves the Archived list. */
-export async function clearGroup(id) {
-  const g = await db.groups.get(id);
-  if (!g) return;
-  await db.groups.put({
-    id: g.id,
-    name: g.name,
-    ownerType: g.ownerType,
-    ownerPersonId: g.ownerPersonId ?? null,
-    isArchived: true,
-    cleared: true,
-    createdAt: g.createdAt || nowISO(),
-    updatedAt: nowISO(),
-  });
+  await db.groups.update(id, { isArchived: false, updatedAt: nowISO() });
 }
 
 /* ============================ Entries ============================ */
@@ -682,75 +647,146 @@ export async function createFirstCar({ name, defaultKmPerLiter, finishOnboarding
   return group;
 }
 
-/** Permanently delete a group AND all its fill-ups + their payments (cascade).
- *  Destructive - confirm first. */
+/** Permanently delete a group AND all its fill-ups, their payments, and any
+ *  credit applied within it (cascade). Destructive - confirm first. */
 export async function permanentlyDeleteGroup(id) {
-  await db.transaction("rw", db.groups, db.entries, db.payments, db.deletions, async () => {
-    const entryIds = await db.entries.where("groupId").equals(id).primaryKeys();
-    let payIds = [];
-    if (entryIds.length) {
-      payIds = await db.payments.where("entryId").anyOf(entryIds).primaryKeys();
-      await db.payments.where("entryId").anyOf(entryIds).delete();
+  await db.transaction(
+    "rw",
+    db.groups,
+    db.entries,
+    db.payments,
+    db.creditApplications,
+    db.deletions,
+    async () => {
+      const entryIds = await db.entries.where("groupId").equals(id).primaryKeys();
+      let payIds = [];
+      if (entryIds.length) {
+        payIds = await db.payments.where("entryId").anyOf(entryIds).primaryKeys();
+        await db.payments.where("entryId").anyOf(entryIds).delete();
+      }
+      // Credit rows are scoped to the group, but also catch any that merely
+      // target one of its entries - leaving those behind would point the ledger
+      // at fill-ups that no longer exist.
+      const creditIds = await creditIdsFor({ groupId: id, entryIds });
+      if (creditIds.length) await db.creditApplications.bulkDelete(creditIds);
+      await db.entries.where("groupId").equals(id).delete();
+      await db.groups.delete(id);
+      await tombstone("groups", id);
+      await tombstone("entries", entryIds);
+      await tombstone("payments", payIds);
+      await tombstone("creditApplications", creditIds);
     }
-    await db.entries.where("groupId").equals(id).delete();
-    await db.groups.delete(id);
-    await tombstone("groups", id);
-    await tombstone("entries", entryIds);
-    await tombstone("payments", payIds);
-  });
+  );
 }
 
-/** Permanently delete a person: cascade-delete any carpools they OWN (and those
- *  carpools' fill-ups + payments), remove them from every remaining fill-up's
- *  passengers, delete their own payments, and remove the person record. */
+/** Ids of credit applications belonging to a group, targeting any of the given
+ *  entries, or held/owed by a given person - whichever filters are supplied. */
+async function creditIdsFor({ groupId = null, entryIds = [], personKey = null }) {
+  const all = await db.creditApplications.toArray();
+  const targets = new Set(entryIds);
+  return all
+    .filter(
+      (a) =>
+        (groupId && a.groupId === groupId) ||
+        targets.has(a.targetEntryId) ||
+        (personKey && (a.debtorKey === personKey || a.creditorKey === personKey))
+    )
+    .map((a) => a.id);
+}
+
+/** One person's passenger row taken off an entry WITHOUT moving anyone else's
+ *  share. Equal and Compensate split by who's on the trip, so simply dropping a
+ *  row re-prices every survivor - a debt someone already settled would quietly
+ *  go up. Those entries get each survivor frozen at what they owed a moment ago.
+ *  Distance shares don't depend on the other riders, so those entries are left
+ *  live. Returns the new passengers array, or null if this person wasn't on it. */
+function passengersWithoutPerson(entry, group, personId) {
+  const pax = entry.passengers || [];
+  const keepIdx = [];
+  pax.forEach((p, i) => {
+    if (!(p.who?.type === "person" && p.who.personId === personId)) keepIdx.push(i);
+  });
+  if (keepIdx.length === pax.length) return null;
+
+  // Price it exactly as the screens do, or a Compensate trip's markup would be
+  // split differently here than the user ever saw.
+  const stamped = withCoveredWho(entry, group);
+  const before = calcEntryShares(stamped);
+  const kept = keepIdx.map((i) => pax[i]);
+  const after = calcEntryShares({ ...stamped, passengers: kept });
+  const moved = keepIdx.some((i, k) => Math.abs(before[i] - after[k]) > 0.005);
+  if (!moved) return kept;
+  // Re-pinning an already-pinned row is a no-op: `before` includes its pin.
+  return keepIdx.map((i, k) => ({ ...kept[k], pinnedShare: before[i] }));
+}
+
+/** Permanently delete a person: remove them from every fill-up they rode on
+ *  (without re-pricing the riders who stay), delete their payments and any
+ *  credit they held or owed, and remove the person record.
+ *  Refuses while they still own a carpool - see the throw below. */
 export async function permanentlyDeletePerson(id) {
-  await db.transaction("rw", db.people, db.groups, db.entries, db.payments, db.deletions, async () => {
-    // 1. Carpools this person owns cascade away entirely (no dangling owner).
-    const ownedGroupIds = await db.groups
-      .where("ownerPersonId")
-      .equals(id)
-      .primaryKeys();
-    const cascadedEntryIds = [];
-    const cascadedPayIds = [];
-    for (const gid of ownedGroupIds) {
-      const eIds = await db.entries.where("groupId").equals(gid).primaryKeys();
-      if (eIds.length) {
-        const pIds = await db.payments.where("entryId").anyOf(eIds).primaryKeys();
-        cascadedPayIds.push(...pIds);
-        await db.payments.where("entryId").anyOf(eIds).delete();
-      }
-      cascadedEntryIds.push(...eIds);
-      await db.entries.where("groupId").equals(gid).delete();
-    }
-    if (ownedGroupIds.length) await db.groups.bulkDelete(ownedGroupIds);
+  // A carpool can't exist without an owner, so deleting one out from under it
+  // would take the vehicle and its whole history along too. That's far too much
+  // to hang off a single tap, so make the carpool an explicit decision first.
+  const owned = await db.groups.where("ownerPersonId").equals(id).toArray();
+  if (owned.length) {
+    const names = owned.map((g) => g.name).join(", ");
+    const one = owned.length === 1;
+    throw new Error(
+      `They own ${one ? "a carpool" : `${owned.length} carpools`} (${names}). ` +
+        `Delete ${one ? "that carpool" : "those carpools"} first, or give ` +
+        `${one ? "it" : "them"} a new owner.`
+    );
+  }
 
-    // 2. Their own payments (in carpools they ride in).
-    const payments = await db.payments.toArray();
-    const theirPayIds = payments
-      .filter((pm) => pm.who?.type === "person" && pm.who.personId === id)
-      .map((pm) => pm.id);
-    if (theirPayIds.length) await db.payments.bulkDelete(theirPayIds);
+  const personKey = whoKey({ type: "person", personId: id });
+  const touchedGroupIds = new Set();
 
-    // 3. Strip them from every remaining fill-up's passengers (an edit, not a
-    //    delete - the entry survives, so it gets a fresh updatedAt, no tombstone).
-    const entries = await db.entries.toArray();
-    for (const e of entries) {
-      const kept = (e.passengers || []).filter(
-        (p) => !(p.who?.type === "person" && p.who.personId === id)
-      );
-      if (kept.length !== (e.passengers || []).length) {
+  await db.transaction(
+    "rw",
+    db.people,
+    db.groups,
+    db.entries,
+    db.payments,
+    db.creditApplications,
+    db.deletions,
+    async () => {
+      // Their payments, in every carpool they rode in.
+      const payments = await db.payments.toArray();
+      const theirPayIds = payments
+        .filter((pm) => pm.who?.type === "person" && pm.who.personId === id)
+        .map((pm) => pm.id);
+      if (theirPayIds.length) await db.payments.bulkDelete(theirPayIds);
+
+      // Credit they held or were owed. Their overpayments are gone with the
+      // payments above, so any application still resting on them is stale.
+      const creditIds = await creditIdsFor({ personKey });
+      if (creditIds.length) await db.creditApplications.bulkDelete(creditIds);
+
+      // Strip them from every fill-up's passengers. The entry survives, so this
+      // is an edit (fresh updatedAt), not a delete - no tombstone.
+      const entries = await db.entries.toArray();
+      const groups = await db.groups.toArray();
+      const groupById = new Map(groups.map((g) => [g.id, g]));
+      for (const e of entries) {
+        const kept = passengersWithoutPerson(e, groupById.get(e.groupId), id);
+        if (!kept) continue;
         await db.entries.update(e.id, { passengers: kept, updatedAt: nowISO() });
+        if (e.groupId) touchedGroupIds.add(e.groupId);
       }
-    }
-    await db.people.delete(id);
 
-    // Tombstone everything actually removed so the deletes propagate on sync.
-    await tombstone("people", id);
-    await tombstone("groups", ownedGroupIds);
-    await tombstone("entries", cascadedEntryIds);
-    await tombstone("payments", [...cascadedPayIds, ...theirPayIds]);
-  });
+      await db.people.delete(id);
+      await tombstone("people", id);
+      await tombstone("payments", theirPayIds);
+      await tombstone("creditApplications", creditIds);
+    }
+  );
+
+  // Removing their payments frees up debt elsewhere; re-check what's left so no
+  // credit application is left covering more than its target still owes.
+  for (const gid of touchedGroupIds) await reconcileCreditForGroup(gid);
 }
+
 
 /** Wipe every table and reset to a fresh, un-onboarded state. Destructive -
  *  callers must double-confirm with the user first.

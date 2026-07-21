@@ -1,0 +1,16 @@
+# The Gradle wrapper script is run by /bin/sh on Linux and macOS. If git checks
+# it out with CRLF (the Windows default here) the shebang breaks and the build
+# dies with "bad interpreter". Pin it to LF regardless of platform.
+gradlew text eol=lf
+android/gradlew text eol=lf
+*.sh text eol=lf
+
+# Never line-ending-mangle binaries.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.webp binary
+*.jar binary
+*.keystore binary
+*.jks binary

@@ -8,7 +8,6 @@ dist-ssr
 .DS_Store
 .vite
 .claude/
-android
 ANDROID.md
 HANDOFF.md
 CarPawl-gh-pages
@@ -17,3 +16,21 @@ CHANGELOG.md
 # Local scratch / extraction artifacts
 _extracted
 *.zip
+
+# Android native project: the SOURCE is tracked (versionCode/versionName, the
+# manifest, app icons and splash art) because `cap sync` never regenerates it -
+# a fresh clone running `cap add android` would get a default project and lose
+# all of it. Only build output, machine-local paths and signing secrets are out.
+android/build/
+android/app/build/
+android/.gradle/
+android/.idea/
+android/captures/
+android/local.properties
+android/app/release/
+android/app/src/main/assets/public/
+*.apk
+*.aab
+*.jks
+*.keystore
+keystore.properties

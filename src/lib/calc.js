@@ -295,7 +295,9 @@ export function entryShares(entry) {
   const autoIdx = [];
   const autoRaw = [];
   pax.forEach((p, i) => {
-    if (method === "driver_comp" && p.manualOverride != null) {
+    if (p.pinnedShare != null) {
+      values[i] = round2(Number(p.pinnedShare) || 0);
+    } else if (method === "driver_comp" && p.manualOverride != null) {
       values[i] = round2(Number(p.manualOverride) || 0);
     } else {
       autoIdx.push(i);

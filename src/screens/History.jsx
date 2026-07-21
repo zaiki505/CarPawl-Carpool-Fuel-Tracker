@@ -74,13 +74,13 @@ export function History() {
 
   const { payments, peopleMap, people, nonOwnedGroups, groupMap } = data;
 
-  // Vehicle dropdown: any vehicle that appears in history and isn't cleared -
-  // including archived ones (their fill-ups still show, so let them be filtered).
+  // Vehicle dropdown: any vehicle that appears in history - including archived
+  // ones (their fill-ups still show, so let them be filtered).
   const groupsWithHistory = new Set(data.entries.map((e) => e.groupId));
   const groupOptions = [
     { value: "all", label: "All vehicles" },
     ...data.groups
-      .filter((g) => !g.cleared && groupsWithHistory.has(g.id))
+      .filter((g) => groupsWithHistory.has(g.id))
       .filter((g) =>
         ownership === "owned"
           ? g.ownerType === "me"

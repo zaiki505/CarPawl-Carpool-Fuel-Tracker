@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CarPawl</string>
+    <string name="title_activity_main">CarPawl</string>
+    <string name="package_name">com.carpawl.app</string>
+    <string name="custom_url_scheme">com.carpawl.app</string>
+</resources>
