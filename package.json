@@ -17,7 +17,8 @@
     "build:mobile:beta": "vite build --mode beta && cap sync android",
     "build:mobile:release": "vite build --mode release && cap sync android",
     "cap:sync": "cap sync android",
-    "android": "cap open android"
+    "android": "cap open android",
+    "icons:beta": "node scripts/gen-beta-icons.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",

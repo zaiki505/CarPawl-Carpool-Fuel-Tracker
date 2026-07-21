@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Beta flavor override of the official #7A37E6. Sampled from
+         public/Carpawl-Beta-icon.png so the adaptive mask edge matches. -->
+    <color name="ic_launcher_background">#1E0142</color>
+</resources>

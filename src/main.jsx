@@ -1,11 +1,26 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { APP_NAME } from "./lib/channel.js";
+import { APP_NAME, IS_BETA } from "./lib/channel.js";
 
-// index.html ships the neutral "CarPawl". Only a beta build needs to change it,
-// so an official build never flashes a wrong title while JS boots - the static
-// HTML is already right for the case that matters.
+// index.html ships the neutral "CarPawl" name and the official icons. Only a
+// beta build needs to change them, so an official build never flashes the wrong
+// title or favicon while JS boots - the static HTML is already right for the
+// case that matters. (The installed PWA's icon comes from the manifest, which
+// is resolved at build time in vite.config.js - it can't be patched here.)
 if (document.title !== APP_NAME) document.title = APP_NAME;
+if (IS_BETA) {
+  // Swap each link to its same-SIZE beta counterpart. Pointing them all at one
+  // file would hand the browser a 64px image for the 192px slot.
+  const betaIcon = {
+    "/favicon.png": "/favicon-beta.png",
+    "/icons/icon-192.png": "/icons/beta-icon-192.png",
+    "/icons/apple-touch-icon.png": "/icons/beta-apple-touch-icon.png",
+  };
+  for (const link of document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]')) {
+    const next = betaIcon[link.getAttribute("href")];
+    if (next) link.setAttribute("href", next);
+  }
+}
 
 // Self-hosted JetBrains Mono
 import "@fontsource/jetbrains-mono/400.css";

@@ -29,6 +29,17 @@ export const CHANNEL_REPO = IS_BETA
  *  product flavor instead (resValue app_name), not from here. */
 export const APP_NAME = IS_BETA ? "CarPawl Beta" : "CarPawl";
 
+/* Icons. Beta is the dark-navy paw, official the purple one.
+   Three separate places have to agree, and only this one is runtime:
+     - here                 in-app art (About) + the browser favicon
+     - vite.config.js       the installed PWA's manifest icons
+     - android/app/src/beta the launcher icon, via the flavor source set */
+export const APP_ICON = IS_BETA
+  ? "/Carpawl-Beta-Icon-full.png"
+  : "/CarPawl-icon.png";
+
+export const FAVICON = IS_BETA ? "/favicon-beta.png" : "/favicon.png";
+
 /* Injected by vite.config.js from package.json, so the version lives in exactly
    one place on the web side instead of being hand-copied into a constant. */
 export const APP_VERSION = __APP_VERSION__;
