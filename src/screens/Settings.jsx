@@ -70,7 +70,7 @@ import {
   syncPaymentReminders,
 } from "../lib/notifications.js";
 import { biometricAvailable, verifyBiometric } from "../lib/biometric.js";
-import { APP_VERSION, APP_NAME, IS_BETA } from "../lib/channel.js";
+import { APP_VERSION, APP_NAME, APP_ICON, IS_BETA } from "../lib/channel.js";
 
 // The release PAGE (not the direct .apk asset): a WebView / in-app browser can't
 // follow GitHub's redirecting binary download, so we send people to the release
@@ -1072,8 +1072,8 @@ export function Settings() {
       <section className="section-block" data-cat="about">
         <div className="about-head">
           <img
-            src="/CarPawl-icon.png"
-            alt="CarPawl"
+            src={APP_ICON}
+            alt={APP_NAME}
             className="about-head__logo"
             width={44}
             height={44}

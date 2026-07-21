@@ -34,6 +34,22 @@ android {
     // the client registered for com.carpawl.app, so Google Sign-In and Drive
     // sync fail on beta builds until a SECOND Android OAuth client is created
     // for com.carpawl.app.beta in the same Google Cloud project.
+    // Name the APK after the channel and version instead of leaving it as
+    // app-beta-debug.apk, which is a poor thing to hand someone as a download.
+    // Produces e.g. CarPawl-v0.3.0.apk / CarPawl-Beta-v0.3.0.apk.
+    //
+    // Release builds get an explicit "-unsigned" marker while no signingConfig
+    // exists: an unsigned APK installs nowhere, and it is exactly the file that
+    // gets uploaded to a release by mistake. The marker disappears on its own
+    // once signing is set up.
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            def base = variant.flavorName == "beta" ? "CarPawl-Beta" : "CarPawl"
+            def unsigned = variant.signingConfig == null ? "-unsigned" : ""
+            outputFileName = "${base}-v${variant.versionName}${unsigned}.apk"
+        }
+    }
+
     flavorDimensions "channel"
     productFlavors {
         beta {
