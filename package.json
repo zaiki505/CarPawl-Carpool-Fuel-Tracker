@@ -4,7 +4,6 @@
   "version": "0.3.0",
   "type": "module",
   "description": "CarPawl - a personal, offline-first carpool fuel tracker.",
-  "homepage": "https://zaiki505.github.io/CarPawl-Carpool-Fuel-Tracker/",
   "scripts": {
     "postinstall": "patch-package",
     "dev": "vite",
@@ -18,9 +17,7 @@
     "build:mobile:beta": "vite build --mode beta && cap sync android",
     "build:mobile:release": "vite build --mode release && cap sync android",
     "cap:sync": "cap sync android",
-    "android": "cap open android",
-    "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist"
+    "android": "cap open android"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.1",
@@ -47,7 +44,6 @@
     "@testing-library/user-event": "^14.6.1",
     "@vitejs/plugin-react": "^4.3.4",
     "fake-indexeddb": "^6.2.5",
-    "gh-pages": "^6.3.0",
     "happy-dom": "^20.10.6",
     "patch-package": "^8.0.1",
     "sharp": "^0.35.3",

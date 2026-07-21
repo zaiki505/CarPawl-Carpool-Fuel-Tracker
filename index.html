@@ -25,7 +25,10 @@
       name="description"
       content="CarPawl - track your car's fuel spending and split carpool fuel bills, offline and on-device."
     />
-    <title>CarPawl Beta</title>
+    <!-- Neutral on purpose. A beta build appends "Beta" at runtime (main.jsx,
+         from the build channel); an official build leaves this as-is, so it can
+         never ship a stale "Beta" in the tab or in a bookmark title. -->
+    <title>CarPawl</title>
   </head>
   <body class="z-body">
     <div id="root"></div>
