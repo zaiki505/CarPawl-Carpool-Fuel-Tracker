@@ -120,8 +120,13 @@
       "windows": {
         "command": ".\\gradlew.bat"
       },
+      // Debug, not Release: there is no signingConfig in build.gradle, so
+      // assembleBetaRelease emits an UNSIGNED apk that no phone will install.
+      // Debug builds are auto-signed with ~/.android/debug.keystore, which is
+      // what every shipped CarPawl apk has used. Switch to assembleBetaRelease
+      // once a real release keystore is wired up.
       "args": [
-        "assembleBetaRelease"
+        "assembleBetaDebug"
       ],
       "options": {
         "cwd": "${workspaceFolder}/android"
@@ -157,8 +162,9 @@
       "windows": {
         "command": ".\\gradlew.bat"
       },
+      // Debug for the same reason as the beta task above - Release is unsigned.
       "args": [
-        "assembleOfficialRelease"
+        "assembleOfficialDebug"
       ],
       "options": {
         "cwd": "${workspaceFolder}/android"
