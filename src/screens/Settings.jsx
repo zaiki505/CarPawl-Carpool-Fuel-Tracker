@@ -75,7 +75,8 @@ const APP_VERSION = "0.3.0";
 // The release PAGE (not the direct .apk asset): a WebView / in-app browser can't
 // follow GitHub's redirecting binary download, so we send people to the release
 // page and let them tap the APK there in the real browser (BATCH_1 #5, same fix
-// as the in-app update button).
+// as the in-app update button). This supersedes the old hardcoded v0.2.5 .apk
+// link that the public repo still carried - it never needs bumping by hand.
 const ANDROID_RELEASE_PAGE = `${GITHUB_URL}/releases/tag/v${APP_VERSION}`;
 
 /* Settings: appearance, fuel/format prefs, default fuel price, the global people list, archived items with
