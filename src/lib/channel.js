@@ -1,8 +1,13 @@
 /* Release channel.
 
    Two GitHub repos serve two audiences:
-     beta    -> zaiki505/CarPawl                        (prereleases welcome)
+     beta    -> zaiki505/CarPawl-Beta                   (prereleases welcome)
      release -> zaiki505/CarPawl-Carpool-Fuel-Tracker   (the public app)
+
+   Use each repo's CURRENT name. The beta repo was renamed from "CarPawl", and
+   while GitHub 301-redirects the old name today, that redirect dies the moment
+   a new repo called "CarPawl" is created - at which point the update check
+   would quietly start reading releases from the wrong project.
 
    The channel is fixed at BUILD time by VITE_RELEASE_CHANNEL, which the
    `build:beta` / `build:release` scripts set via Vite's --mode (.env.beta /
@@ -17,7 +22,7 @@ export const IS_BETA = CHANNEL === "beta";
 
 /** The repo this build checks for updates and links to in About. */
 export const CHANNEL_REPO = IS_BETA
-  ? "zaiki505/CarPawl"
+  ? "zaiki505/CarPawl-Beta"
   : "zaiki505/CarPawl-Carpool-Fuel-Tracker";
 
 /** App name shown in the tab/title. The Android app name comes from the gradle
