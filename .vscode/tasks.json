@@ -1,45 +1,83 @@
 {
   // Release tasks for CarPawl's two channels.
   //
-  // Committing is the same for both channels - use the Source Control panel as
-  // normal. These tasks cover the parts VS Code's Git UI cannot express:
-  //   * the public remote's branch is `master`, not `main`, so "Push to..."
-  //     would create a stray `main` branch there instead of updating it
+  // The channels are SEPARATE BRANCHES in this one repo:
+  //   main    -> beta.     Pushes to `origin`           (CarPawl-Beta)
+  //   release -> official. Pushes to `CarPawl_Official` (CarPawl-Carpool-Fuel-Tracker)
+  //
+  // So the two repos hold different code: main runs ahead, and release only
+  // moves when you promote. Day-to-day work happens on main; you should rarely
+  // commit on release directly - promote instead.
+  //
+  // These tasks cover what VS Code's Git UI cannot express:
+  //   * the official remote's branch is `master`, not `release`, so a naive
+  //     push would create a stray branch there
+  //   * promotion is a merge from main into release, then a push
   //   * a beta tag belongs only on the beta remote, an official tag only on
   //     the public one
-  //   * which APK flavor and which Vite mode go with which channel
   //
   // Run with: Ctrl+Shift+P -> "Tasks: Run Task".
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Push code to BOTH remotes",
-      "detail": "Code always goes to both. Tags never do - use a release task for those.",
-      "dependsOrder": "sequence",
-      "dependsOn": ["_push beta remote", "_push official remote"],
-      "problemMatcher": []
-    },
-    {
-      "label": "_push beta remote",
-      "hide": true,
+      "label": "Beta: push main",
+      "detail": "Pushes the beta branch to CarPawl-Beta. Official is untouched.",
       "type": "shell",
       "command": "git",
       "args": ["push", "origin", "main"],
       "problemMatcher": []
     },
+
     {
-      "label": "_push official remote",
+      "label": "Promote beta -> official",
+      "detail": "Merges main into release and pushes it to the public repo. Run the OFFICIAL APK build afterwards.",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "_checkout release",
+        "_merge main into release",
+        "_push release",
+        "_back to main"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "_checkout release",
       "hide": true,
       "type": "shell",
       "command": "git",
-      // main:master is the whole point - the public repo's branch is `master`.
-      "args": ["push", "CarPawl_Official", "main:master"],
+      "args": ["checkout", "release"],
+      "problemMatcher": []
+    },
+    {
+      "label": "_merge main into release",
+      "hide": true,
+      "type": "shell",
+      "command": "git",
+      // --no-ff keeps a visible promotion point in the official history.
+      "args": ["merge", "--no-ff", "main", "-m", "Promote beta to official"],
+      "problemMatcher": []
+    },
+    {
+      "label": "_push release",
+      "hide": true,
+      "type": "shell",
+      "command": "git",
+      // release:master - the official remote's branch is named master.
+      "args": ["push", "CarPawl_Official", "release:master"],
+      "problemMatcher": []
+    },
+    {
+      "label": "_back to main",
+      "hide": true,
+      "type": "shell",
+      "command": "git",
+      "args": ["checkout", "main"],
       "problemMatcher": []
     },
 
     {
       "label": "Build BETA APK",
-      "detail": "Vite --mode beta, cap sync, then the beta product flavor.",
+      "detail": "Run on main. Vite --mode beta, cap sync, then the beta product flavor.",
       "dependsOrder": "sequence",
       "dependsOn": ["_web beta", "_apk beta"],
       "problemMatcher": []
@@ -65,7 +103,7 @@
 
     {
       "label": "Build OFFICIAL APK",
-      "detail": "Vite --mode release, cap sync, then the official product flavor.",
+      "detail": "Check out release first. Vite --mode release, cap sync, then the official flavor.",
       "dependsOrder": "sequence",
       "dependsOn": ["_web release", "_apk official"],
       "problemMatcher": []
@@ -91,7 +129,7 @@
 
     {
       "label": "Tag + push BETA prerelease",
-      "detail": "Tags the current commit and pushes the tag to the BETA remote only.",
+      "detail": "Tags the current commit (be on main) and pushes the tag to the BETA remote only.",
       "dependsOrder": "sequence",
       "dependsOn": ["_tag beta", "_push tag beta"],
       "problemMatcher": []
@@ -115,7 +153,7 @@
 
     {
       "label": "Tag + push OFFICIAL release",
-      "detail": "Tags the current commit and pushes the tag to the PUBLIC remote only.",
+      "detail": "Tags the current commit (be on release, after promoting) and pushes the tag to the PUBLIC remote only.",
       "dependsOrder": "sequence",
       "dependsOn": ["_tag official", "_push tag official"],
       "problemMatcher": []
